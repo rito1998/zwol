@@ -26,24 +26,13 @@ const main_params = clap.parseParamsComptime(
 );
 const MainArgs = clap.ResultEx(clap.Help, &main_params, main_parsers);
 
-pub fn main(init: std.process.Init.Minimal) !void {
-    // ----- ALLOCATOR -----
-    // var da = std.heap.DebugAllocator(.{
-    //     .thread_safe = true,
-    //     .retain_metadata = true,
-    // }){};
-    // defer _ = da.deinit();
-    // const gpa = da.allocator();
-    const gpa = std.heap.page_allocator;
+pub fn main(init: std.process.Init) !void {
+    const io = init.io;
 
-    // ----- IO IMPLEMENTATION -----
-    var threaded: std.Io.Threaded = .init(gpa, std.Io.Threaded.InitOptions{ .environ = init.environ });
-    defer threaded.deinit();
-    const io = threaded.io();
+    var iter = try init.minimal.args.iterateAllocator(init.arena.allocator());
+    _ = iter.next(); // skip program name
 
-    var iter = init.args.iterate();
-    _ = iter.next();
-
+    const gpa = std.heap.page_allocator; // to be dropped (see std.process.Init)
     var diag = clap.Diagnostic{};
     var res = clap.parseEx(clap.Help, &main_params, main_parsers, &iter, .{
         .diagnostic = &diag,
@@ -62,11 +51,11 @@ pub fn main(init: std.process.Init.Minimal) !void {
     const subcommand = res.positionals[0] orelse return subCommandHelp();
     switch (subcommand) {
         .wake => try subCommandWake(gpa, io, &iter, res),
-        .status => try subCommandStatus(gpa, &iter, res),
-        .alias => try subCommandAlias(gpa, &iter, res),
-        .remove => try subCommandRemove(gpa, &iter, res),
-        .list => try subCommandList(gpa, &iter, res),
-        .relay => try subCommandRelay(gpa, &iter, res),
+        .status => try subCommandStatus(gpa, io, &iter, res),
+        .alias => try subCommandAlias(gpa, io, &iter, res),
+        .remove => try subCommandRemove(gpa, io, &iter, res),
+        .list => try subCommandList(gpa, io, &iter, res),
+        .relay => try subCommandRelay(gpa, io, &iter, res),
         .version => try subCommandVersion(),
         .help => try subCommandHelp(),
     }
@@ -105,7 +94,7 @@ fn subCommandWake(allocator: std.mem.Allocator, io: std.Io, iter: *std.process.A
 
         for (alias_list.items) |item| {
             try wol.broadcast_magic_packet_ipv4(io, item.mac, item.port, item.broadcast, null);
-            std.Thread.sleep(100 * std.time.ns_per_ms); // sleep 100ms
+            try std.Io.sleep(io, .fromMilliseconds(100), .real); // sleep between packets
         }
         return;
     }
@@ -130,7 +119,7 @@ fn subCommandWake(allocator: std.mem.Allocator, io: std.Io, iter: *std.process.A
     }
 }
 
-fn subCommandStatus(allocator: std.mem.Allocator, io: std.Io, iter: *std.process.ArgIterator, main_args: MainArgs) !void {
+fn subCommandStatus(allocator: std.mem.Allocator, io: std.Io, iter: *std.process.Args.Iterator, main_args: MainArgs) !void {
     _ = main_args;
 
     const params = comptime clap.parseParamsComptime(
@@ -175,6 +164,7 @@ fn subCommandStatus(allocator: std.mem.Allocator, io: std.Io, iter: *std.process
     for (alias_list.items, 0..) |item, i| {
         threads[i] = try std.Thread.spawn(.{}, ping.ping_with_os_command_multithread, .{
             allocator,
+            io,
             item.fqdn,
             is_status_live,
             &mutex,
@@ -240,8 +230,8 @@ fn subCommandStatus(allocator: std.mem.Allocator, io: std.Io, iter: *std.process
         mutex.unlock();
 
         if (is_status_live) {
-            // sleep 1 second before printing the status again to console
-            std.Thread.sleep(1 * std.time.ns_per_s);
+            // sleep between each console update
+            try std.Io.sleep(io, .fromSeconds(1), .real);
         } else {
             break;
         }
@@ -249,7 +239,7 @@ fn subCommandStatus(allocator: std.mem.Allocator, io: std.Io, iter: *std.process
     }
 }
 
-fn subCommandAlias(allocator: std.mem.Allocator, io: std.Io, iter: *std.process.ArgIterator, main_args: MainArgs) !void {
+fn subCommandAlias(allocator: std.mem.Allocator, io: std.Io, iter: *std.process.Args.Iterator, main_args: MainArgs) !void {
     _ = main_args;
 
     const params = comptime clap.parseParamsComptime(
@@ -304,12 +294,12 @@ fn subCommandAlias(allocator: std.mem.Allocator, io: std.Io, iter: *std.process.
     }) catch |err| {
         return std.debug.print("Failed to add alias: {}\n", .{err});
     };
-    alias.writeAliasFile(allocator, alias_list);
+    alias.writeAliasFile(allocator, io, alias_list);
 
     std.debug.print("Alias added.\n", .{});
 }
 
-fn subCommandRemove(allocator: std.mem.Allocator, io: std.Io, iter: *std.process.ArgIterator, main_args: MainArgs) !void {
+fn subCommandRemove(allocator: std.mem.Allocator, io: std.Io, iter: *std.process.Args.Iterator, main_args: MainArgs) !void {
     _ = main_args;
 
     const params = comptime clap.parseParamsComptime(
@@ -355,7 +345,7 @@ fn subCommandRemove(allocator: std.mem.Allocator, io: std.Io, iter: *std.process
     for (alias_list.items, 0..) |item, idx| {
         if (std.mem.eql(u8, item.name, name)) {
             _ = alias_list.orderedRemove(idx);
-            alias.writeAliasFile(allocator, alias_list, io);
+            alias.writeAliasFile(allocator, io, alias_list);
             std.debug.print("Alias removed.\n", .{});
             return;
         }
@@ -363,7 +353,7 @@ fn subCommandRemove(allocator: std.mem.Allocator, io: std.Io, iter: *std.process
     std.debug.print("Alias not found.\n", .{});
 }
 
-fn subCommandList(allocator: std.mem.Allocator, io: std.Io, iter: *std.process.ArgIterator, main_args: MainArgs) !void {
+fn subCommandList(allocator: std.mem.Allocator, io: std.Io, iter: *std.process.Args.Iterator, main_args: MainArgs) !void {
     _ = main_args;
 
     const params = comptime clap.parseParamsComptime(
@@ -395,7 +385,7 @@ fn subCommandList(allocator: std.mem.Allocator, io: std.Io, iter: *std.process.A
     }
 }
 
-fn subCommandRelay(allocator: std.mem.Allocator, io: std.Io, iter: *std.process.ArgIterator, main_args: MainArgs) !void {
+fn subCommandRelay(allocator: std.mem.Allocator, io: std.Io, iter: *std.process.Args.Iterator, main_args: MainArgs) !void {
     _ = main_args;
 
     const params = comptime clap.parseParamsComptime(
@@ -435,7 +425,7 @@ fn subCommandRelay(allocator: std.mem.Allocator, io: std.Io, iter: *std.process.
     if (res.args.help != 0)
         return std.debug.print("{s}", .{help_message});
 
-    const listen_addr = std.net.Address.resolveIp(res.args.listen_address orelse {
+    const listen_addr = std.Io.net.IpAddress.resolve(io, res.args.listen_address orelse {
         std.debug.print("A value for the parameter --listen_address must be specified.\n\n", .{});
         return std.debug.print("{s}", .{help_message});
     }, res.args.listen_port orelse 9) catch |err| {
@@ -443,7 +433,7 @@ fn subCommandRelay(allocator: std.mem.Allocator, io: std.Io, iter: *std.process.
         return std.debug.print("{s}", .{help_message});
     };
 
-    const relay_addr = std.net.Address.resolveIp(res.args.relay_address orelse {
+    const relay_addr = std.Io.net.IpAddress.resolve(io, res.args.relay_address orelse {
         std.debug.print("A value for the parameter --relay_address must be specified.\n\n", .{});
         return std.debug.print("{s}", .{help_message});
     }, res.args.relay_port orelse 9) catch |err| {

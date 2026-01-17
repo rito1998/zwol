@@ -80,7 +80,7 @@ pub fn readAliasFile(allocator: std.mem.Allocator, io: std.Io) ArrayList(Alias) 
     @memcpy(file_source_nt[0..file_source.len], file_source);
 
     // Zon parsing
-    const alias_list_slice = std.zon.parse.fromSlice([]Alias, allocator, file_source_nt, null, .{}) catch |err| {
+    const alias_list_slice = std.zon.parse.fromSliceAlloc([]Alias, allocator, file_source_nt, null, .{}) catch |err| {
         std.log.err("Error parsing alias file: {}\n", .{err});
         std.process.exit(1);
     };
