@@ -152,6 +152,7 @@ pub fn getAliasFilePath(allocator: std.mem.Allocator, io: std.Io) []u8 {
         std.log.err("Error getting self executable directory path: {}", .{err});
         std.process.exit(1);
     };
+    defer allocator.free(exe_dir_path);
 
     const file_path = std.fs.path.join(allocator, &[_][]const u8{
         exe_dir_path,
