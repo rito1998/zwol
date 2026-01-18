@@ -60,24 +60,19 @@ pub fn readAliasFile(allocator: std.mem.Allocator, io: std.Io) ArrayList(Alias) 
     };
     defer file.close(io);
 
-    var reader_buffer: [1024]u8 = undefined;
-    var file_reader = file.reader(io, &reader_buffer);
-    const reader_interface = &file_reader.interface;
-
-    const file_source = reader_interface.readAlloc(allocator, reader_buffer.len) catch |err| {
-        std.log.err("Error reading alias file: {}\n", .{err});
+    const file_bytes = std.Io.Dir.readFileAlloc(.cwd(), io, file_path, allocator, .unlimited) catch |err| {
+        std.log.err("Error opening alias file: {}\n", .{err});
         std.process.exit(1);
     };
-    defer allocator.free(file_source);
 
     // Allocate a new null-terminated slice
-    const file_source_nt = allocator.allocSentinel(u8, file_source.len, 0) catch |err| {
+    const file_source_nt = allocator.allocSentinel(u8, file_bytes.len, 0) catch |err| {
         std.log.err("Error allocating memory for alias file: {}\n", .{err});
         std.process.exit(1);
     };
     defer allocator.free(file_source_nt);
 
-    @memcpy(file_source_nt[0..file_source.len], file_source);
+    @memcpy(file_source_nt[0..file_bytes.len], file_bytes);
 
     // Zon parsing
     const alias_list_slice = std.zon.parse.fromSliceAlloc([]Alias, allocator, file_source_nt, null, .{}) catch |err| {

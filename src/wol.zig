@@ -78,6 +78,8 @@ pub fn generate_magic_packet(mac_bytes: [6]u8) [102]u8 {
 
 /// Broadcasts a magic packet to wake up a device with the specified MAC address.
 pub fn broadcast_magic_packet_ipv4(io: std.Io, mac: []const u8, port: ?u16, broadcast: ?[]const u8, count: ?u8) !void {
+    std.log.err("UDP networking for magic packet not yet implemented for zig 0.16-master.", .{});
+
     _ = io; // currently unused
 
     // Defaults
@@ -203,6 +205,8 @@ test "is_magic_packet (invalid - broken repetition)" {
 
 /// Never returns. Listens for magic packets and relays them to the specified address and port.
 pub fn relay_begin(io: std.Io, listen_addr: std.Io.net.IpAddress, relay_addr: std.Io.net.IpAddress) !void {
+    std.log.err("UDP networking for magic packet not yet implemented for zig 0.16-master.", .{});
+
     // const socket = try posix.socket(posix.AF.INET, posix.SOCK.DGRAM, posix.IPPROTO.UDP);
     // defer posix.close(socket);
 
