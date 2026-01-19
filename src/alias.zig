@@ -64,6 +64,7 @@ pub fn readAliasFile(allocator: std.mem.Allocator, io: std.Io) ArrayList(Alias) 
         std.log.err("Error opening alias file: {}", .{err});
         std.process.exit(1);
     };
+    defer allocator.free(file_bytes);
 
     // Allocate a new null-terminated slice
     const file_source_nt = allocator.allocSentinel(u8, file_bytes.len, 0) catch |err| {
