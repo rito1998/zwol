@@ -30,7 +30,7 @@ pub fn main(init: std.process.Init) !void {
     const allocator = init.arena.allocator();
     const io = init.io;
 
-    var iter = try init.minimal.args.iterateAllocator(init.arena.allocator());
+    var iter = try init.minimal.args.iterateAllocator(allocator);
     _ = iter.next(); // skip program name
 
     var diag = clap.Diagnostic{};
