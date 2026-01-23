@@ -93,8 +93,8 @@ pub fn broadcast_magic_packet_ipv4(io: std.Io, mac: []const u8, port: ?u16, broa
     const magic_packet = generate_magic_packet(mac_bytes);
 
     // Create a UDP socket
-    const localhost = std.Io.net.IpAddress.parse("0.0.0.0", 0) catch {
-        std.log.err("Failed to parse localhost address.", .{});
+    const localhost = std.Io.net.IpAddress.parse("0.0.0.0", 0) catch |err| {
+        std.log.err("Failed to parse localhost address: {}", .{err});
         return error.InvalidAddress;
     };
     const socket = std.Io.net.IpAddress.bind(&localhost, io, .{ .mode = .dgram, .protocol = .udp }) catch |err| {
@@ -208,48 +208,49 @@ test "is_magic_packet (invalid - broken repetition)" {
 
 /// Never returns. Listens for magic packets and relays them to the specified address and port.
 pub fn relay_begin(io: std.Io, listen_addr: std.Io.net.IpAddress, relay_addr: std.Io.net.IpAddress) !void {
-    std.log.err("UDP networking for magic packet not yet implemented for zig 0.16-master.", .{});
+    const socket = std.Io.net.IpAddress.bind(&listen_addr, io, .{
+        .mode = .dgram,
+        .protocol = .udp,
+    }) catch |err| {
+        std.log.err("Failed to bind UDP socket to {f}: {}\n", .{ listen_addr.ip4, err });
+        return err;
+    };
+    defer socket.close(io);
 
-    // const socket = try posix.socket(posix.AF.INET, posix.SOCK.DGRAM, posix.IPPROTO.UDP);
-    // defer posix.close(socket);
-
+    // Enable socket broadcast (setting SO_BROADCAST to anything othen than empty string enables broadcast)
     const option_value: u32 = 1;
-    _ = option_value; // currently unused
-    // try posix.setsockopt(socket, posix.SOL.SOCKET, posix.SO.BROADCAST, std.mem.asBytes(&option_value));
-
-    // posix.bind(socket, &listen_addr.any, listen_addr.getOsSockLen()) catch |err| {
-    //     std.log.err("Failed to bind socket to {f}: {}\n", .{ listen_addr.in, err });
-    //     return err;
-    // };
+    posix.setsockopt(socket.handle, posix.SOL.SOCKET, posix.SO.BROADCAST, std.mem.asBytes(&option_value)) catch |err| {
+        std.log.err("Failed to set socket option to enable broadcast: {}", .{err});
+        return err;
+    };
 
     var buf: [102]u8 = undefined;
-    buf[0] = 0; // prevent "variable 'buf' is uninitialized" compile error
 
     while (true) {
         try std.Io.sleep(io, .fromSeconds(1), .real);
 
         std.log.info("Listening for WOL packets on {f}, relaying to {f}...\n", .{ listen_addr.ip4, relay_addr.ip4 });
 
-        // const received_bytes_count = posix.recv(socket, &buf, 0) catch |err| {
-        //     std.log.err("Failed to receive data: {}\n", .{err});
-        //     continue; // in case of recv error (e.g. error.MessageTooBig when size > 102 bytes), ignore and continue listening
-        // };
+        const incoming_message = socket.receive(io, &buf) catch |err| {
+            std.log.warn("Failed to receive data: {}\n", .{err});
+            continue; // in case of recv error (e.g. error.MessageTooBig when size > 102 bytes), ignore and continue listening
+        };
 
-        // if (received_bytes_count != 102) {
-        //     std.log.info("Received packet ignored: unexpected packet size of {d} bytes, expected 102 bytes.\n", .{received_bytes_count});
-        //     continue; // ignore packets that are not 102 bytes
-        // }
+        if (incoming_message.data.len != 102) {
+            std.log.warn("Received packet ignored: unexpected packet size of {d} bytes, expected 102 bytes.\n", .{incoming_message.data.len});
+            continue; // ignore packets that are not 102 bytes
+        }
 
         if (!is_magic_packet(buf)) {
-            std.log.info("Received packet ignored: invalid WOL packet.\n", .{});
+            std.log.warn("Received packet ignored: invalid WOL packet.\n", .{});
             continue;
         }
 
-        // std.log.info("Received WOL packet on {f}.\nPacket data: {x}.\n\n", .{ listen_addr.in, buf[0..received_bytes_count] });
+        std.log.info("Received WOL packet on {f}.\nPacket data: {x}.\n\n", .{ listen_addr.ip4, buf[0..incoming_message.data.len] });
         // Relay the received magic packet to the specified address and port
-        // _ = posix.sendto(socket, &buf, 0, &relay_addr.any, relay_addr.getOsSockLen()) catch |err| {
-        //     std.log.err("Failed to relay to {f}.\n", .{relay_addr.in});
-        //     return err;
-        // };
+        _ = socket.send(io, &relay_addr, &buf) catch |err| {
+            std.log.err("Failed to relay to {f}: {}\n", .{ relay_addr.ip4, err });
+            return err;
+        };
     }
 }
