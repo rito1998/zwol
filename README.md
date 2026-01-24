@@ -12,7 +12,7 @@ A CLI utility for sending wake-on-lan magic packets to wake up a computer in a L
 
 ## Installation
 
-Pre-compiled binaries of [zig-wol](https://github.com/rktr1998/zig-wol) are distributed with [releases](https://github.com/rktr1998/zig-wol/releases): download the binary for your architecture and operating system or use the installation scripts below and you are good to go!
+Pre-compiled binaries of [zig-wol](https://github.com/rktr1998/zig-wol) are distributed with [releases](https://github.com/rktr1998/zig-wol/releases). The installation scripts below download the latest release for your processor architecture and **install** the program at `C:\Users\%username%\.zig-wol` on Windows and `/home/$USER/.zig-wol` on Linux and macOS. To **uninstall** zig-wol, simply delete this folder.
 
 ### Windows
 
@@ -20,23 +20,17 @@ Pre-compiled binaries of [zig-wol](https://github.com/rktr1998/zig-wol) are dist
 Invoke-RestMethod "https://raw.githubusercontent.com/rktr1998/zig-wol/refs/heads/main/install/install-latest-on-windows.ps1" | Invoke-Expression
 ```
 
-This command downloads the latest release for your processor architecture and **installs** the program at `C:\Users\%username%\.zig-wol`. To **uninstall** zig-wol, simply delete this folder.
-
 ### Linux
 
 ```sh
 bash <(curl -sSL https://raw.githubusercontent.com/rktr1998/zig-wol/refs/heads/main/install/install-latest-on-linux.sh)
 ```
 
-This command downloads the latest release for your processor architecture and **installs** the program at `/home/$USER/.zig-wol`. To **uninstall** zig-wol, simply delete this folder.
-
 ### macOS
 
 ```sh
 bash <(curl -sSL https://raw.githubusercontent.com/rktr1998/zig-wol/refs/heads/main/install/install-latest-on-macos.sh)
 ```
-
-This command downloads the latest release for your processor architecture and **installs** the program at `/home/$USER/.zig-wol`. To **uninstall** zig-wol, simply delete this folder.
 
 ## Usage
 
