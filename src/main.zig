@@ -31,6 +31,7 @@ pub fn main(init: std.process.Init) !void {
     const io = init.io;
 
     var iter = try init.minimal.args.iterateAllocator(allocator);
+    defer iter.deinit();
     _ = iter.next(); // skip program name
 
     var diag = clap.Diagnostic{};
