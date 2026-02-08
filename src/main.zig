@@ -376,15 +376,14 @@ fn subCommandList(allocator: Allocator, io: Io, iter: *process.Args.Iterator, ma
     }
 }
 
+// TODO: proposal simplify the parameters by accepting IpAddress like "192.168.0.1:9"
 fn subCommandRelay(allocator: Allocator, io: Io, iter: *process.Args.Iterator, main_args: MainArgs) !void {
     _ = main_args;
 
     const params = comptime clap.parseParamsComptime(
-        \\--help                  Display this help and exit.
-        \\--listen_address <str>  The address to listen on for wake-on-lan packets, for example coming from a router.
-        \\--listen_port <u16>     Default 9, the port to listen on for wake-on-lan packets.
-        \\--relay_address <str>   The address to relay the packets to, normally the subnet broadcast e.g. 192.168.1.255.
-        \\--relay_port <u16>      Default 9, generally irrelevant since wake-on-lan works with OSI layer 2 (Data Link).
+        \\--help   Display this help and exit.
+        \\<str>    IpAddress to listen on, in format host:port, e.g. 192.168.0.10:9999.
+        \\<str>    IpAddress to relay to, in format host:port, normally the subnet broadcast, e.g. 192.168.0.255:9.
     );
 
     var diag = clap.Diagnostic{};
@@ -398,41 +397,39 @@ fn subCommandRelay(allocator: Allocator, io: Io, iter: *process.Args.Iterator, m
     defer res.deinit();
 
     const help_message =
-        \\Relay mode: Listen for Wake-on-LAN packets and forward them to another address.
-        \\Usage: zig-wol relay --listen_address <ADDR> --relay_address <ADDR> [--listen_port <PORT>] [--relay_port <PORT>] [--help]
+        \\Relay mode: listen for Wake-on-LAN packets and forward them.
+        \\Usage: zig-wol relay <LISTEN_ADDR> <RELAY_ADDR> [--help]
         \\
         \\Options:
-        \\  --listen_address <ADDR>   The address to listen on for incoming WOL packets (required).
-        \\  --listen_port <PORT>      The port to listen on (default: 9).
-        \\  --relay_address <ADDR>    The address to relay WOL packets to (required, usually a broadcast address).
-        \\  --relay_port <PORT>       The port to relay packets to (default: 9).
-        \\  --help                    Display this help and exit.
+        \\  --help            Display this help and exit.
         \\
         \\Example:
-        \\  zig-wol relay --listen_address 192.168.0.10 --listen_port 9999 --relay_address 192.168.0.255 --relay_port 9
+        \\  zig-wol relay 192.168.0.10:9999 192.168.0.255:9
         \\
     ;
 
     if (res.args.help != 0)
         return debug.print("{s}", .{help_message});
 
-    const listen_addr = Io.net.IpAddress.resolve(io, res.args.listen_address orelse {
-        log.err("A value for the parameter --listen_address must be specified.", .{});
+    const listen_literal = res.positionals[0] orelse {
+        log.err("Provide a listen address.", .{});
         return debug.print("{s}", .{help_message});
-    }, res.args.listen_port orelse 9) catch |err| {
-        log.err("Invalid listen address: {}", .{err});
+    };
+    const relay_literal = res.positionals[1] orelse {
+        log.err("Provide a relay address.", .{});
         return debug.print("{s}", .{help_message});
     };
 
-    const relay_addr = Io.net.IpAddress.resolve(io, res.args.relay_address orelse {
-        log.err("A value for the parameter --relay_address must be specified.", .{});
+    const listen = Io.net.IpAddress.parseLiteral(listen_literal) catch |err| {
+        log.err("Invalid listen address: {}", .{err});
         return debug.print("{s}", .{help_message});
-    }, res.args.relay_port orelse 9) catch |err| {
+    };
+    const relay = Io.net.IpAddress.parseLiteral(relay_literal) catch |err| {
         log.err("Invalid relay address: {}", .{err});
         return debug.print("{s}", .{help_message});
     };
 
-    wol.relay_begin(io, listen_addr, relay_addr) catch |err| {
+    wol.relay_begin(io, listen, relay) catch |err| {
         return log.err("Failed to start relay: {}", .{err});
     };
 }

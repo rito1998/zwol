@@ -109,11 +109,10 @@ pub fn main(init: std.process.Init) !void {
 
 ## Remote wake-on-lan
 
-Using the subcommand **relay** it is possible to make zig-wol work as a beacon that listens on `--listen_address` for inbound wake-on-lan magic packets and relays them to a `--relay_address`.
-The parameters --listen_port and --relay_port are optional and default to port 9 if unspecified. It is recommended to use two different port numbers.
+Using the subcommand **relay** it is possible to make zig-wol work as a beacon that listens on `--listen` for inbound wake-on-lan magic packets and relays them to a `--relay`.
 
 ```sh
-zig-wol relay --listen_address 192.168.0.10 --listen_port 9999 --relay_address 192.168.0.255 --relay_port 9
+zig-wol relay --listen 192.168.0.10:9999 --relay 192.168.0.255:9
 ```
 
 A realistic example usage, using the command above as a reference, is to have a home LAN comprised of one or more powerful machines that need to be woken remotely and an always-on low-power machine, like a Raspberry Pi, that runs the `zig-wol relay` repeater.
@@ -157,8 +156,8 @@ CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 WorkingDirectory=/home/USERNAME/.zig-wol
 ExecStartPre=/bin/sleep 5
 ExecStart=/home/USERNAME/.zig-wol/zig-wol relay \\
-  --listen_address=192.168.0.10 --listen_port=9999 \\
-  --relay_address=192.168.0.255 --relay_port=9
+  --listen=192.168.0.10 --listen_port=9999 \\
+  --relay=192.168.0.255 --relay_port=9
 Restart=on-failure
 RestartSec=10s
 
