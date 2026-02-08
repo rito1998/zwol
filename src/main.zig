@@ -122,7 +122,7 @@ fn subCommandWake(allocator: Allocator, io: Io, iter: *process.Args.Iterator, ma
             }
         }
 
-        log.err("Provided argument {s} is neither a valid MAC nor an existing alias name.\n", .{mac});
+        log.err("Provided argument {s} is neither a valid MAC nor an existing alias name.", .{mac});
     }
 }
 
@@ -247,15 +247,15 @@ fn subCommandAlias(allocator: Allocator, io: Io, iter: *process.Args.Iterator, m
     };
     defer res.deinit();
 
-    const name = res.positionals[0] orelse return log.err("Provide name and MAC for the new alias. Usage: zig-wol alias <NAME> <MAC>\n", .{});
-    const mac = res.positionals[1] orelse return log.err("Provide a MAC. Usage: zig-wol alias <NAME> <MAC>\n", .{});
+    const name = res.positionals[0] orelse return log.err("Provide name and MAC for the new alias. Usage: zig-wol alias <NAME> <MAC>", .{});
+    const mac = res.positionals[1] orelse return log.err("Provide a MAC. Usage: zig-wol alias <NAME> <MAC>", .{});
     const broadcast = res.args.broadcast orelse "255.255.255.255";
     const port = res.args.port orelse 9;
     const fqdn = res.args.fqdn orelse "";
     const description = res.args.description orelse "";
 
     _ = wol.parse_mac(mac) catch |err| {
-        return log.err("Invalid MAC: {}\n", .{err});
+        return log.err("Invalid MAC: {}", .{err});
     };
 
     // get config from file, add alias and save config to file
@@ -277,11 +277,11 @@ fn subCommandAlias(allocator: Allocator, io: Io, iter: *process.Args.Iterator, m
         .fqdn = fqdn,
         .description = description,
     }) catch |err| {
-        return log.err("Failed to add alias: {}\n", .{err});
+        return log.err("Failed to add alias: {}", .{err});
     };
     alias.writeAliasFile(allocator, io, alias_list);
 
-    log.info("Alias added.\n", .{});
+    log.info("Alias added.", .{});
 }
 
 fn subCommandRemove(allocator: Allocator, io: Io, iter: *process.Args.Iterator, main_args: MainArgs) !void {
@@ -313,7 +313,7 @@ fn subCommandRemove(allocator: Allocator, io: Io, iter: *process.Args.Iterator, 
 
         alias_list.clearAndFree(allocator);
         alias.writeAliasFile(allocator, io, alias_list);
-        log.info("Removed {d} aliases.\n", .{alias_count});
+        log.info("Removed {d} aliases.", .{alias_count});
         return;
     }
 
@@ -331,11 +331,11 @@ fn subCommandRemove(allocator: Allocator, io: Io, iter: *process.Args.Iterator, 
         if (std.mem.eql(u8, item.name, name)) {
             _ = alias_list.orderedRemove(idx);
             alias.writeAliasFile(allocator, io, alias_list);
-            log.info("Alias removed.\n", .{});
+            log.info("Alias removed.", .{});
             return;
         }
     }
-    log.err("Alias not found.\n", .{});
+    log.err("Alias not found.", .{});
 }
 
 fn subCommandList(allocator: Allocator, io: Io, iter: *process.Args.Iterator, main_args: MainArgs) !void {
@@ -361,7 +361,7 @@ fn subCommandList(allocator: Allocator, io: Io, iter: *process.Args.Iterator, ma
     var buf: [64]u8 = undefined;
     var stdout = Io.File.stdout().writer(io, &buf);
     defer stdout.interface.flush() catch |err| {
-        log.err("Failed to flush stdout: {}\n", .{err});
+        log.err("Failed to flush stdout: {}", .{err});
     };
 
     for (alias_list.items) |item| {
@@ -417,23 +417,23 @@ fn subCommandRelay(allocator: Allocator, io: Io, iter: *process.Args.Iterator, m
         return debug.print("{s}", .{help_message});
 
     const listen_addr = Io.net.IpAddress.resolve(io, res.args.listen_address orelse {
-        log.err("A value for the parameter --listen_address must be specified.\n\n", .{});
+        log.err("A value for the parameter --listen_address must be specified.", .{});
         return debug.print("{s}", .{help_message});
     }, res.args.listen_port orelse 9) catch |err| {
-        log.err("Invalid listen address: {}\n\n", .{err});
+        log.err("Invalid listen address: {}", .{err});
         return debug.print("{s}", .{help_message});
     };
 
     const relay_addr = Io.net.IpAddress.resolve(io, res.args.relay_address orelse {
-        log.err("A value for the parameter --relay_address must be specified.\n\n", .{});
+        log.err("A value for the parameter --relay_address must be specified.", .{});
         return debug.print("{s}", .{help_message});
     }, res.args.relay_port orelse 9) catch |err| {
-        log.err("Invalid relay address: {}\n\n", .{err});
+        log.err("Invalid relay address: {}", .{err});
         return debug.print("{s}", .{help_message});
     };
 
     wol.relay_begin(io, listen_addr, relay_addr) catch |err| {
-        return log.err("Failed to start relay: {}\n", .{err});
+        return log.err("Failed to start relay: {}", .{err});
     };
 }
 
