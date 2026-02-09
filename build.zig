@@ -39,6 +39,15 @@ pub fn build(b: *std.Build) void {
 
     b.installArtifact(exe);
 
+    // ------------------------------ RUN -------------------------------
+    const run_step = b.step("run", "Run the program");
+    const run_cmd = b.addRunArtifact(exe);
+    run_step.dependOn(&run_cmd.step);
+    run_cmd.step.dependOn(b.getInstallStep());
+    if (b.args) |args| {
+        run_cmd.addArgs(args);
+    }
+
     // ------------------------------ DOCS ------------------------------
     // Generate documentation step (run this with "zig build docs")
     const install_docs = b.addInstallDirectory(.{
