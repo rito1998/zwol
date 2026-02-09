@@ -190,9 +190,20 @@ fn subCommandStatus(allocator: Allocator, io: Io, iter: *process.Args.Iterator, 
         }
     }
 
+    // Set codepage to display emojis correctly on Windows
+    if (builtin.target.os.tag == .windows) {
+        var setcp = std.os.windows.CONSOLE.USER_IO.SET_CP(.Output, 65001);
+        const ntstatus = try setcp.operate(io, null);
+        if (ntstatus != .SUCCESS) {
+            log.warn("Failed to set codepage 65001: characters may not display correctly.", .{});
+        }
+    }
+
     var buf: [64]u8 = undefined;
     var stdout_writer = Io.File.stdout().writer(io, &buf);
     var stdout = &stdout_writer.interface;
+
+    try stdout.print("\u{1B}[?25l", .{}); // hide cursor
 
     var idx: u64 = 0;
     while (true) {
