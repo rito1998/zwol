@@ -203,7 +203,7 @@ fn subCommandStatus(allocator: Allocator, io: Io, iter: *process.Args.Iterator, 
     var stdout_writer = Io.File.stdout().writer(io, &buf);
     var stdout = &stdout_writer.interface;
 
-    try stdout.print("\u{1B}[?25l", .{}); // hide cursor
+    //try stdout.print("\u{1B}[?25l", .{}); // hide cursor
 
     var idx: u64 = 0;
     while (true) {
@@ -233,6 +233,9 @@ fn subCommandStatus(allocator: Allocator, io: Io, iter: *process.Args.Iterator, 
         }
         idx += 1;
     }
+
+    //try stdout.print("\u{1B}[?25h", .{}); // show cursor
+    //try stdout.flush();
 }
 
 fn subCommandAlias(allocator: Allocator, io: Io, iter: *process.Args.Iterator, main_args: MainArgs) !void {
