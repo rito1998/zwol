@@ -49,7 +49,7 @@ zig-wol wake <NAME>                             # wake a machine by alias
 
 The optional `--broadcast` (e.g. 192.168.0.255) is important if there are multiple network interfaces. Setting the correct subnet broadcast address ensures the OS chooses the right network interface. If not specified, 255.255.255.255 is used.
 
-Use `zig-wol status` to ping all machines by their FQDNs (if defined on alias creation) and display the status.
+Use `zig-wol ping` to ping all machines by their FQDNs (if defined on alias creation) and display the result.
 
 ```sh
 🟢  office-server
