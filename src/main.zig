@@ -206,7 +206,7 @@ fn subCommandPing(allocator: Allocator, io: Io, iter: *process.Args.Iterator, ma
     var idx: u64 = 0;
     while (true) {
         // reset the cursor to the top left before reprinting all lines
-        if (res.args.forever != 0 and idx != 0) {
+        if (forever and idx != 0) {
             try stdout.print("\u{1B}[{d}A\r", .{alias_list.items.len});
         }
 
@@ -224,11 +224,8 @@ fn subCommandPing(allocator: Allocator, io: Io, iter: *process.Args.Iterator, ma
         try stdout.flush();
 
         if (forever) {
-            // sleep between each console update
-            try Io.sleep(io, .fromSeconds(1), .real);
-        } else {
-            break;
-        }
+            try io.sleep(.fromSeconds(1), .real); // sleep between each console update
+        } else break;
         idx += 1;
     }
 
@@ -394,7 +391,6 @@ fn subCommandList(allocator: Allocator, io: Io, iter: *process.Args.Iterator, ma
     }
 }
 
-// TODO: proposal simplify the parameters by accepting IpAddress like "192.168.0.1:9"
 fn subCommandRelay(allocator: Allocator, io: Io, iter: *process.Args.Iterator, main_args: MainArgs) !void {
     _ = main_args;
 
