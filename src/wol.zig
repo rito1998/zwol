@@ -83,7 +83,11 @@ pub fn generate_magic_packet(mac_bytes: [6]u8) [102]u8 {
 /// The broadcast address is expected as literal address:port, e.g. "255.255.255.255:9".
 pub fn broadcast_magic_packet_ipv4(io: Io, mac: []const u8, broadcast: ?[]const u8, count: ?u8) !void {
     // Defaults
-    const actual_broadcast = try Io.net.IpAddress.parseLiteral(broadcast orelse "255.255.255.255:9");
+    var actual_broadcast = try Io.net.IpAddress.parseLiteral(broadcast orelse "255.255.255.255:9");
+    if (actual_broadcast.getPort() == 0) {
+        log.warn("Provided broadcast address {f} has no port specified, defaulting to port 9.", .{actual_broadcast});
+        actual_broadcast.setPort(9);
+    }
     const actual_count = count orelse 3; // how man times the magic packet is sent
 
     const mac_bytes = parse_mac(mac) catch |err| {
