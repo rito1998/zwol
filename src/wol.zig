@@ -79,14 +79,11 @@ pub fn generate_magic_packet(mac_bytes: [6]u8) [102]u8 {
     return packet;
 }
 
-/// Broadcasts a magic packet to wake up a device with the specified MAC address.
-pub fn broadcast_magic_packet_ipv4(io: Io, mac: []const u8, port: ?u16, broadcast: ?[]const u8, count: ?u8) !void {
+/// Send a magic packet to wake up a device with the specified MAC address.
+/// The broadcast address is expected as literal address:port, e.g. "255.255.255.255:9".
+pub fn broadcast_magic_packet_ipv4(io: Io, mac: []const u8, broadcast: ?[]const u8, count: ?u8) !void {
     // Defaults
-    const actual_port = port orelse 9;
-    const actual_broadcast = Io.net.IpAddress.parse(broadcast orelse "255.255.255.255", actual_port) catch |err| {
-        log.err("Invalid broadcast address: {}", .{err});
-        return err;
-    };
+    const actual_broadcast = try Io.net.IpAddress.parseLiteral(broadcast orelse "255.255.255.255:9");
     const actual_count = count orelse 3; // how man times the magic packet is sent
 
     const mac_bytes = parse_mac(mac) catch |err| {
@@ -106,7 +103,7 @@ pub fn broadcast_magic_packet_ipv4(io: Io, mac: []const u8, port: ?u16, broadcas
     };
     defer socket.close(io);
 
-    // Enable socket broadcast (setting SO_BROADCAST to anything othen than empty string enables broadcast)
+    // Enable socket broadcast
     const option_value: u32 = 1;
     posix.setsockopt(socket.handle, posix.SOL.SOCKET, posix.SO.BROADCAST, std.mem.asBytes(&option_value)) catch |err| {
         log.err("Failed to set socket option to enable broadcast: {}", .{err});

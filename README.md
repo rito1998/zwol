@@ -43,11 +43,11 @@ zig-wol wake <MAC>
 Create an alias for a MAC address, list all aliases, or remove one.
 
 ```sh
-zig-wol alias <NAME> <MAC> --broadcast <ADDR>   # create an alias and set its broadcast
+zig-wol alias <NAME> <MAC> --broadcast <ADDR:PORT>   # create an alias and set its broadcast
 zig-wol wake <NAME>                             # wake a machine by alias
 ```
 
-The optional `--broadcast` (e.g. 192.168.0.255) is important if there are multiple network interfaces. Setting the correct subnet broadcast address ensures the OS chooses the right network interface. If not specified, 255.255.255.255 is used.
+The optional `--broadcast` (e.g. 192.168.0.255:9) is important if there are multiple network interfaces. Setting the correct subnet broadcast address ensures the OS chooses the right network interface. If not specified, 255.255.255.255:9 is used.
 
 Use `zig-wol ping` to ping all machines by their FQDNs (if defined on alias creation) and display the result.
 
@@ -103,7 +103,7 @@ Import the module in `main.zig` and broadcast a magic packet.
 const wol = @import("wol");
 
 pub fn main(init: std.process.Init) !void {
-    try wol.broadcast_magic_packet_ipv4(init.io, "11-22-33-44-55-66", 10, "255.255.255.255", 1);
+    try wol.broadcast_magic_packet_ipv4(init.io, "11-22-33-44-55-66", 10, "255.255.255.255:9", 1);
 }
 ```
 

@@ -10,7 +10,6 @@ pub const Alias = struct {
     name: []const u8,
     mac: []const u8,
     broadcast: []const u8,
-    port: u16,
     fqdn: []const u8,
     description: []const u8,
 };
@@ -25,8 +24,7 @@ fn getExampleAliasList(allocator: Allocator) ArrayList(Alias) {
     alias_list.append(allocator, Alias{
         .name = "alias-example-unreachable",
         .mac = "01-01-01-ab-ab-ab",
-        .broadcast = "255.255.255.255",
-        .port = 9,
+        .broadcast = "255.255.255.255:9",
         .fqdn = "alias-example.unreachable-by-ping",
         .description = "Alias example. Supports WOL but cannot be pinged.",
     }) catch {
@@ -37,8 +35,7 @@ fn getExampleAliasList(allocator: Allocator) ArrayList(Alias) {
     alias_list.append(allocator, Alias{
         .name = "alias-example-localhost",
         .mac = "00-00-00-00-00-00",
-        .broadcast = "255.255.255.255",
-        .port = 9,
+        .broadcast = "255.255.255.255:9",
         .fqdn = "localhost",
         .description = "Alias example. Can be pinged but does not support WOL.",
     }) catch {

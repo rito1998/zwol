@@ -83,8 +83,7 @@ fn subCommandWake(allocator: Allocator, io: Io, iter: *process.Args.Iterator, ma
     const params = comptime clap.parseParamsComptime(
         \\<str>               MAC of the device to wake up, or an existing alias name.
         \\--help              Display this help and exit.
-        \\--broadcast <str>   IPv4, defaults to 255.255.255.255, setting this may be required in some scenarios.
-        \\--port <u16>        UDP port, default 9. Generally irrelevant since wake-on-lan works with OSI layer 2 (Data Link).
+        \\--broadcast <str>   IpAddress, defaults to 255.255.255.255:9, setting this may be required in some scenarios.
         \\--all               Wake up all devices in the alias list.
     );
 
@@ -109,7 +108,7 @@ fn subCommandWake(allocator: Allocator, io: Io, iter: *process.Args.Iterator, ma
         defer alias_list.deinit(allocator);
 
         for (alias_list.items) |item| {
-            try wol.broadcast_magic_packet_ipv4(io, item.mac, item.port, item.broadcast, null);
+            try wol.broadcast_magic_packet_ipv4(io, item.mac, item.broadcast, null);
             try Io.sleep(io, .fromMilliseconds(100), .real); // sleep between packets
         }
         return;
@@ -118,7 +117,7 @@ fn subCommandWake(allocator: Allocator, io: Io, iter: *process.Args.Iterator, ma
     const mac = res.positionals[0] orelse return log.err("{s}", .{help_message});
 
     if (wol.is_mac_valid(mac)) {
-        return try wol.broadcast_magic_packet_ipv4(io, mac, res.args.port, res.args.broadcast, null);
+        return try wol.broadcast_magic_packet_ipv4(io, mac, res.args.broadcast, null);
     } else {
         var alias_list = alias.readAliasFile(allocator, io);
         defer alias_list.deinit(allocator);
@@ -126,7 +125,7 @@ fn subCommandWake(allocator: Allocator, io: Io, iter: *process.Args.Iterator, ma
         for (alias_list.items) |item| {
             if (item.name.len > 0 and item.name.len == mac.len) {
                 if (std.mem.eql(u8, item.name, mac)) {
-                    return try wol.broadcast_magic_packet_ipv4(io, item.mac, item.port, item.broadcast, null);
+                    return try wol.broadcast_magic_packet_ipv4(io, item.mac, item.broadcast, null);
                 }
             }
         }
@@ -239,8 +238,7 @@ fn subCommandAlias(allocator: Allocator, io: Io, iter: *process.Args.Iterator, m
     const params = comptime clap.parseParamsComptime(
         \\<str>                 Name for the new alias.
         \\<str>                 MAC for the new alias.
-        \\--broadcast <str>     IPv4, defaults to 255.255.255.255, setting this may be required in some scenarios.
-        \\--port <u16>          UDP port, default 9. Generally irrelevant since wake-on-lan works with OSI layer 2 (Data Link).
+        \\--broadcast <str>     IpAddress, defaults to 255.255.255.255:9, setting this may be required in some scenarios.
         \\--fqdn <str>          Fully Qualified Domain Name or IP address. Required to ping for displaying the ping.
         \\--description <str>   Description for the new alias.
         \\-h, --help
@@ -258,14 +256,18 @@ fn subCommandAlias(allocator: Allocator, io: Io, iter: *process.Args.Iterator, m
 
     const name = res.positionals[0] orelse return log.err("Provide name and MAC for the new alias. Usage: zig-wol alias <NAME> <MAC>", .{});
     const mac = res.positionals[1] orelse return log.err("Provide a MAC. Usage: zig-wol alias <NAME> <MAC>", .{});
-    const broadcast = res.args.broadcast orelse "255.255.255.255";
-    const port = res.args.port orelse 9;
-    const fqdn = res.args.fqdn orelse "";
-    const description = res.args.description orelse "";
-
     _ = wol.parse_mac(mac) catch |err| {
         return log.err("Invalid MAC: {}", .{err});
     };
+    const broadcast = res.args.broadcast orelse "255.255.255.255:9";
+    const broadcast_addr = Io.net.IpAddress.parseLiteral(broadcast) catch |err| {
+        return log.err("Invalid broadcast: {}. Must be in the form address:port, e.g. 255.255.255.255:9.", .{err});
+    };
+    if (broadcast_addr.getPort() == 0) {
+        return log.err("Broadcast must include a port, e.g. 255.255.255.255:9.", .{});
+    }
+    const fqdn = res.args.fqdn orelse "";
+    const description = res.args.description orelse "";
 
     // get config from file, add alias and save config to file
     var alias_list = alias.readAliasFile(allocator, io);
@@ -282,7 +284,6 @@ fn subCommandAlias(allocator: Allocator, io: Io, iter: *process.Args.Iterator, m
         .name = name,
         .mac = mac,
         .broadcast = broadcast,
-        .port = port,
         .fqdn = fqdn,
         .description = description,
     }) catch |err| {
@@ -380,11 +381,10 @@ fn subCommandList(allocator: Allocator, io: Io, iter: *process.Args.Iterator, ma
     };
 
     for (alias_list.items) |item| {
-        try stdout.interface.print("Name: {s}\nMAC: {s}\nBroadcast: {s}\nPort: {d}\nFQDN: {s}\nDescription: {s}\n\n", .{
+        try stdout.interface.print("Name: {s}\nMAC: {s}\nBroadcast: {s}\nFQDN: {s}\nDescription: {s}\n\n", .{
             item.name,
             item.mac,
             item.broadcast,
-            item.port,
             item.fqdn,
             item.description,
         });
@@ -460,7 +460,7 @@ fn subCommandHelp(io: Io) !void {
         \\Commands:
         \\  wake      Wake up a device by its MAC.
         \\  ping      Ping all aliases.
-        \\  alias     Create an alias for a MAC, optionally specify a broadcast, FQDN and more.
+        \\  alias     Create an alias for a MAC, optionally specify a broadcast and a FQDN.
         \\  remove    Remove an alias by name.
         \\  list      List all aliases.
         \\  relay     Start listening for wol packets and relay them.
