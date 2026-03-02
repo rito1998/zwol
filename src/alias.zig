@@ -80,8 +80,11 @@ pub fn readAliasFile(allocator: Allocator, io: Io) ArrayList(Alias) {
     @memcpy(file_source_nt[0..file_bytes.len], file_bytes);
 
     // Zon parsing
-    const alias_list_slice = std.zon.parse.fromSliceAlloc([]Alias, allocator, file_source_nt, null, .{}) catch |err| {
+    var diagnostic: std.zon.parse.Diagnostics = .{};
+    defer diagnostic.deinit(allocator);
+    const alias_list_slice = std.zon.parse.fromSliceAlloc([]Alias, allocator, file_source_nt, &diagnostic, .{}) catch |err| {
         log.err("Error parsing alias file: {}", .{err});
+        log.err("Zon parsing diagnostics:\n{f}", .{diagnostic});
         process.exit(1);
     };
 
