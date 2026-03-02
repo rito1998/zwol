@@ -22,10 +22,11 @@ pub fn ping_with_os_command_multithread(allocator: Allocator, io: Io, fqdn: []co
             try io.sleep(.fromSeconds(5), .real); // do not spam too many pings if pinging forever
         } else break;
     }
+    @compileError("deprecated");
 }
 
 /// Pings a FQDN with system's ping command, returns true if successful.
-pub fn ping_with_os_command(allocator: Allocator, io: Io, fqdn: []const u8) !bool {
+pub fn ping_with_os_command(allocator: Allocator, io: Io, fqdn: []const u8) anyerror!bool {
     const args = switch (builtin.target.os.tag) {
         // On Windows, depend on PowerShell Test-NetConnection: it prints True to stdout if
         // the ICMP reached the target. Note: ping.exe does not distinguish (by exit code)

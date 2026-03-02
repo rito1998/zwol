@@ -165,52 +165,40 @@ fn subCommandPing(allocator: Allocator, io: Io, iter: *process.Args.Iterator, ma
     var alias_list = alias.readAliasFile(allocator, io);
     defer alias_list.deinit(allocator);
 
-    var threads = try allocator.alloc(std.Thread, alias_list.items.len);
-    defer allocator.free(threads);
-
     var is_alive = try allocator.alloc(bool, alias_list.items.len);
     for (is_alive) |*item| {
         item.* = false;
     }
     defer allocator.free(is_alive);
 
-    var mutex = Io.Mutex.init;
-    for (alias_list.items, 0..) |item, i| {
-        threads[i] = try std.Thread.spawn(.{}, ping.ping_with_os_command_multithread, .{
-            allocator,
-            io,
-            item.fqdn,
-            forever,
-            &mutex,
-            &is_alive[i],
-        });
-    }
-
-    if (forever) {
-        for (threads) |thread| {
-            _ = thread.detach();
-        }
-    } else {
-        for (threads) |thread| {
-            _ = thread.join();
-        }
-    }
-
-    var buf: [64]u8 = undefined;
-    var stdout_writer = Io.File.stdout().writer(io, &buf);
+    var stdout_buf: [64]u8 = undefined;
+    var stdout_writer = Io.File.stdout().writer(io, &stdout_buf);
     var stdout = &stdout_writer.interface;
 
     //try stdout.print("\u{1B}[?25l", .{}); // hide cursor
 
+    var futures: []Io.Future(anyerror!bool) = try allocator.alloc(Io.Future(anyerror!bool), alias_list.items.len);
+    defer allocator.free(futures);
+
     var idx: u64 = 0;
     while (true) {
+        // launch async pings and await all futures
+        for (alias_list.items, 0..) |item, i| {
+            futures[i] = io.async(
+                ping.ping_with_os_command,
+                .{ allocator, io, item.fqdn },
+            );
+        }
+        for (futures, 0..) |*fut, i| {
+            is_alive[i] = try fut.await(io);
+        }
+
         // reset the cursor to the top left before reprinting all lines
         if (forever and idx != 0) {
             try stdout.print("\u{1B}[{d}A\r", .{alias_list.items.len});
         }
 
         // while accessing the results array to print the ping results, lock the mutex
-        mutex.lockUncancelable(io);
         for (alias_list.items, 0..) |item, i| {
             if (is_alive[i]) {
                 try stdout.print("{s}  {s}\n", .{ "\u{1F7E2}", item.name }); // Green circle: 🟢 (U+1F7E2)
@@ -218,12 +206,23 @@ fn subCommandPing(allocator: Allocator, io: Io, iter: *process.Args.Iterator, ma
                 try stdout.print("{s}  {s}\n", .{ "\u{1F534}", item.name }); // Red circle: 🔴 (U+1F534)
             }
         }
-        mutex.unlock(io);
 
         try stdout.flush();
 
         if (forever) {
-            try io.sleep(.fromSeconds(1), .real); // sleep between each console update
+            // print running dots animation while waiting between pings
+            try io.sleep(.fromMilliseconds(500), .real);
+            try stdout.print(".", .{});
+            try stdout.flush();
+            try io.sleep(.fromMilliseconds(500), .real);
+            try stdout.print(".", .{});
+            try stdout.flush();
+            try io.sleep(.fromMilliseconds(500), .real);
+            try stdout.print(".", .{});
+            try stdout.flush();
+            try io.sleep(.fromMilliseconds(500), .real);
+            try stdout.print("\u{1B}[3D   \u{1B}[3D", .{}); // delete the 3 dots
+            try stdout.flush();
         } else break;
         idx += 1;
     }
