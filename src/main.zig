@@ -190,7 +190,7 @@ fn subCommandPing(allocator: Allocator, io: Io, iter: *process.Args.Iterator, ma
             );
         }
         for (futures, 0..) |*fut, i| {
-            is_alive[i] = try fut.await(io);
+            is_alive[i] = fut.await(io) catch false;
         }
 
         // reset the cursor to the top left before reprinting all lines
