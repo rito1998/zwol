@@ -5,7 +5,7 @@ const Io = std.Io;
 const testing = std.testing;
 
 /// Pings an IP address with system's ping command, returns true if successful.
-pub fn systemPingIpAddress(allocator: Allocator, io: Io, address: Io.net.IpAddress) anyerror!bool {
+pub fn systemPingIpAddress(allocator: Allocator, io: Io, address: Io.net.IpAddress) !bool {
     var buf: [255]u8 = undefined;
     const address_literal = switch (address) {
         .ip4 => blk: {
@@ -41,10 +41,10 @@ pub fn systemPingIpAddress(allocator: Allocator, io: Io, address: Io.net.IpAddre
     }
 }
 
-/// Resolves a FQDN and pings it with system ping utility, returns true if successful.
-pub fn systemPingFqdn(allocator: Allocator, io: Io, fqdn: []const u8) anyerror!bool {
-    const address = try hostnameLookup(io, fqdn);
-    return systemPingIpAddress(allocator, io, address);
+/// Resolves a FQDN and pings it with system ping utility.
+pub fn systemPingFqdn(allocator: Allocator, io: Io, fqdn: []const u8, result: *bool) Io.Cancelable!void {
+    const address = hostnameLookup(io, fqdn) catch return Io.Cancelable.Canceled;
+    result.* = systemPingIpAddress(allocator, io, address) catch return Io.Cancelable.Canceled;
 }
 
 test "systemPingFqdn" {

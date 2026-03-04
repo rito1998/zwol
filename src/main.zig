@@ -177,28 +177,25 @@ fn subCommandPing(allocator: Allocator, io: Io, iter: *process.Args.Iterator, ma
 
     //try stdout.print("\u{1B}[?25l", .{}); // hide cursor
 
-    var futures: []Io.Future(anyerror!bool) = try allocator.alloc(Io.Future(anyerror!bool), alias_list.items.len);
-    defer allocator.free(futures);
+    var group = Io.Group.init;
 
     var idx: u64 = 0;
     while (true) {
         // launch async pings and await all futures
         for (alias_list.items, 0..) |item, i| {
-            futures[i] = io.async(
-                ping.systemPing,
-                .{ allocator, io, item.fqdn },
+            group.async(
+                io,
+                ping.systemPingFqdn,
+                .{ allocator, io, item.fqdn, &is_alive[i] },
             );
         }
-        for (futures, 0..) |*fut, i| {
-            is_alive[i] = fut.await(io) catch false;
-        }
+        try group.await(io);
 
         // reset the cursor to the top left before reprinting all lines
         if (forever and idx != 0) {
             try stdout.print("\u{1B}[{d}A\r", .{alias_list.items.len});
         }
 
-        // while accessing the results array to print the ping results, lock the mutex
         for (alias_list.items, 0..) |item, i| {
             if (is_alive[i]) {
                 try stdout.print("{s}  {s}\n", .{ "\u{1F7E2}", item.name }); // Green circle: 🟢 (U+1F7E2)
@@ -206,7 +203,6 @@ fn subCommandPing(allocator: Allocator, io: Io, iter: *process.Args.Iterator, ma
                 try stdout.print("{s}  {s}\n", .{ "\u{1F534}", item.name }); // Red circle: 🔴 (U+1F534)
             }
         }
-
         try stdout.flush();
 
         if (forever) {
