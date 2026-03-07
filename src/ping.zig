@@ -43,8 +43,14 @@ pub fn systemPingIpAddress(allocator: Allocator, io: Io, address: Io.net.IpAddre
 
 /// Resolves a FQDN and pings it with system ping utility.
 pub fn systemPingFqdn(allocator: Allocator, io: Io, fqdn: []const u8, result: *bool) Io.Cancelable!void {
-    const address = hostnameLookup(io, fqdn) catch return Io.Cancelable.Canceled;
-    systemPingIpAddress(allocator, io, address, result) catch return Io.Cancelable.Canceled;
+    var address: ?Io.net.IpAddress = undefined;
+    hostnameLookup(io, fqdn, &address) catch return Io.Cancelable.Canceled;
+    if (address) |addr| {
+        systemPingIpAddress(allocator, io, addr, result) catch return Io.Cancelable.Canceled;
+    } else {
+        result.* = false;
+        return Io.Cancelable.Canceled;
+    }
 }
 
 test "systemPingFqdn" {
@@ -67,20 +73,33 @@ test "systemPingFqdn" {
     );
 }
 
-pub fn hostnameLookup(io: Io, fqdn: []const u8) anyerror!Io.net.IpAddress {
-    try Io.net.HostName.validate(fqdn);
+pub fn hostnameLookup(io: Io, fqdn: []const u8, result: *?Io.net.IpAddress) Io.Cancelable!void {
+    Io.net.HostName.validate(fqdn) catch |err| {
+        std.log.info("hostnameLookup: {s} -> {}", .{ fqdn, err });
+        result.* = null;
+        return Io.Cancelable.Canceled;
+    };
 
     var buf_canonical_name: [255]u8 = undefined;
     var buf_lookup_result: [16]Io.net.HostName.LookupResult = undefined;
     var queue: Io.Queue(Io.net.HostName.LookupResult) = .init(&buf_lookup_result);
-    try Io.net.HostName.lookup(
+    Io.net.HostName.lookup(
         .{ .bytes = fqdn },
         io,
         &queue,
         .{ .canonical_name_buffer = &buf_canonical_name, .port = 0 },
-    );
+    ) catch |err| {
+        std.log.info("hostnameLookup: {s} -> {}", .{ fqdn, err });
+        result.* = null;
+        return Io.Cancelable.Canceled;
+    };
 
-    const lookup_result = try queue.getOne(io);
+    const lookup_result = queue.getOne(io) catch |err| {
+        std.log.info("hostnameLookup: {s} -> {}", .{ fqdn, err });
+        result.* = null;
+        return Io.Cancelable.Canceled;
+    };
+
     std.log.info("hostnameLookup: {s} -> {f}", .{ fqdn, lookup_result.address });
-    return lookup_result.address;
+    result.* = lookup_result.address;
 }

@@ -175,32 +175,25 @@ fn subCommandPing(allocator: Allocator, io: Io, iter: *process.Args.Iterator, ma
     var stdout_writer = Io.File.stdout().writer(io, &stdout_buf);
     var stdout = &stdout_writer.interface;
 
-    //try stdout.print("\u{1B}[?25l", .{}); // hide cursor
-
     // name resolution
+    var group = Io.Group.init;
+
     var resolved_addresses = try allocator.alloc(?Io.net.IpAddress, alias_list.items.len);
     defer allocator.free(resolved_addresses);
 
-    var futures = try allocator.alloc(Io.Future(anyerror!Io.net.IpAddress), alias_list.items.len);
-
     for (alias_list.items, 0..) |item, i| {
         if (item.fqdn.len == 0) {
             continue;
         }
-        futures[i] = io.async(
+        group.async(
+            io,
             ping.hostnameLookup,
-            .{ io, item.fqdn },
+            .{ io, item.fqdn, &resolved_addresses[i] },
         );
     }
-    for (alias_list.items, 0..) |item, i| {
-        if (item.fqdn.len == 0) {
-            continue;
-        }
-        resolved_addresses[i] = futures[i].await(io) catch null;
-    }
+    try group.await(io);
 
-    var group = Io.Group.init;
-
+    //try stdout.print("\u{1B}[?25l", .{}); // hide cursor
     var idx: u64 = 0;
     while (true) {
         // launch async pings and await all futures
