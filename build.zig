@@ -70,11 +70,6 @@ pub fn build(b: *std.Build) void {
             .root_source_file = b.path("src/tests.zig"),
             .target = target,
             .optimize = optimize,
-            .imports = &.{
-                .{ .name = "wol", .module = wol },
-                .{ .name = "clap", .module = clap },
-                .{ .name = "eui", .module = eui },
-            },
         }),
     });
 
