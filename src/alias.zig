@@ -88,20 +88,7 @@ pub fn readAliasFile(allocator: Allocator, io: Io) ArrayList(Alias) {
         process.exit(1);
     };
 
-    // Create the alias list and fill it
-    var alias_list = ArrayList(Alias).initCapacity(allocator, alias_list_slice.len) catch |err| {
-        log.err("Error allocating memory for alias list: {}", .{err});
-        process.exit(1);
-    };
-
-    for (alias_list_slice) |item| {
-        alias_list.append(allocator, item) catch |err| {
-            log.err("Error appending to alias list: {}", .{err});
-            process.exit(1);
-        };
-    }
-
-    return alias_list;
+    return ArrayList(Alias).fromOwnedSlice(alias_list_slice);
 }
 
 test "readAliasFile" {
