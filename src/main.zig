@@ -110,7 +110,7 @@ fn subCommandWake(allocator: Allocator, io: Io, iter: *process.Args.Iterator, ma
 
         for (alias_list.items) |item| {
             try wol.broadcastMagicPacket(io, item.mac, item.broadcast, null);
-            try Io.sleep(io, .fromMilliseconds(100), .real); // sleep between packets
+            try io.sleep(.fromMilliseconds(100), .real); // sleep between packets
         }
         return;
     }

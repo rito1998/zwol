@@ -36,7 +36,11 @@ pub fn broadcastMagicPacket(io: Io, mac: []const u8, broadcast: ?[]const u8, cou
         log.err("Failed to parse address: {}", .{err});
         return error.InvalidAddress;
     };
-    const socket = Io.net.IpAddress.bind(&any_addr, io, .{ .mode = .dgram, .protocol = .udp }) catch |err| {
+    const socket = Io.net.IpAddress.bind(
+        &any_addr,
+        io,
+        .{ .mode = .dgram, .protocol = .udp },
+    ) catch |err| {
         log.err("Failed to bind UDP socket: {}", .{err});
         return err;
     };
@@ -44,7 +48,12 @@ pub fn broadcastMagicPacket(io: Io, mac: []const u8, broadcast: ?[]const u8, cou
 
     // Enable socket broadcast
     const option_value: u32 = 1;
-    posix.setsockopt(socket.handle, posix.SOL.SOCKET, posix.SO.BROADCAST, std.mem.asBytes(&option_value)) catch |err| {
+    posix.setsockopt(
+        socket.handle,
+        posix.SOL.SOCKET,
+        posix.SO.BROADCAST,
+        std.mem.asBytes(&option_value),
+    ) catch |err| {
         log.err("Failed to set socket option to enable broadcast: {}", .{err});
         return err;
     };
@@ -151,44 +160,45 @@ pub fn relayBegin(io: Io, listen_addr: Io.net.IpAddress, relay_addr: Io.net.IpAd
         .mode = .dgram,
         .protocol = .udp,
     }) catch |err| {
-        log.err("Failed to bind UDP socket to {f}: {}\n", .{ listen_addr.ip4, err });
+        log.err("Failed to bind UDP socket to {f}: {}", .{ listen_addr.ip4, err });
         return err;
     };
     defer socket.close(io);
 
     // Enable socket broadcast (setting SO_BROADCAST to anything othen than empty string enables broadcast)
     const option_value: u32 = 1;
-    posix.setsockopt(socket.handle, posix.SOL.SOCKET, posix.SO.BROADCAST, std.mem.asBytes(&option_value)) catch |err| {
+    posix.setsockopt(
+        socket.handle,
+        posix.SOL.SOCKET,
+        posix.SO.BROADCAST,
+        std.mem.asBytes(&option_value),
+    ) catch |err| {
         log.err("Failed to set socket option to enable broadcast: {}", .{err});
         return err;
     };
 
+    log.info("Listening for WOL packets on {f}, relaying to {f}...", .{ listen_addr.ip4, relay_addr.ip4 });
     var buf: [102]u8 = undefined;
-
     while (true) {
-        try Io.sleep(io, .fromSeconds(1), .real);
+        try io.sleep(.fromSeconds(1), .real);
 
-        log.info("Listening for WOL packets on {f}, relaying to {f}...\n", .{ listen_addr.ip4, relay_addr.ip4 });
-
-        const incoming_message = socket.receive(io, &buf) catch |err| {
-            log.warn("Failed to receive data: {}\n", .{err});
-            continue; // in case of recv error (e.g. error.MessageTooBig when size > 102 bytes), ignore and continue listening
-        };
+        const incoming_message = socket.receive(io, &buf) catch continue;
 
         if (incoming_message.data.len != 102) {
-            log.warn("Received packet ignored: unexpected packet size of {d} bytes, expected 102 bytes.\n", .{incoming_message.data.len});
-            continue; // ignore packets that are not 102 bytes
-        }
-
-        if (!isMagicPacket(buf)) {
-            log.warn("Received packet ignored: invalid WOL packet.\n", .{});
+            log.warn("Received packet with invalid size of {d} bytes, expected 102 bytes.", .{incoming_message.data.len});
             continue;
         }
 
-        log.info("Received WOL packet on {f}.\nPacket data: {x}.\n\n", .{ listen_addr.ip4, buf[0..incoming_message.data.len] });
-        // Relay the received magic packet to the specified address and port
+        if (!isMagicPacket(buf)) {
+            log.warn("Received packet ignored: invalid WOL packet.", .{});
+            continue;
+        }
+
+        const mac: Eui48 = .{ .bytes = buf[6..12].* };
+        log.info("Received WOL packet for MAC {f} on {f}, relaying to {f}", .{ mac, listen_addr.ip4, relay_addr.ip4 });
+
         _ = socket.send(io, &relay_addr, &buf) catch |err| {
-            log.err("Failed to relay to {f}: {}\n", .{ relay_addr.ip4, err });
+            log.err("Failed to relay packet to {f}: {}", .{ relay_addr.ip4, err });
             return err;
         };
     }
