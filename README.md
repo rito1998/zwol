@@ -187,3 +187,13 @@ sudo journalctl -u zig-wol.service -f
 ## License
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=rktr1998%2Fzig-wol&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/image?repos=rktr1998/zig-wol&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/image?repos=rktr1998/zig-wol&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/image?repos=rktr1998/zig-wol&type=date&legend=top-left" />
+ </picture>
+</a>
