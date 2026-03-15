@@ -2,7 +2,7 @@
 
 # Zig-wol
 
-A CLI utility for sending wake-on-lan magic packets to wake up a computer in a LAN given its MAC address. Find [zig-wol](https://github.com/rktr1998/zig-wol) also on [Codeberg](https://codeberg.org/rktr1998/zig-wol).
+A CLI utility for sending wake-on-lan magic packets to wake up a computer in a LAN given its MAC address. Find [zig-wol](https://github.com/rktr1998/zig-wol) also on [Codeberg](https://codeberg.org/rito/zig-wol).
 
 
 ## Features
