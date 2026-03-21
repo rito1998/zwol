@@ -7,7 +7,7 @@ const Io = std.Io;
 const ArrayList = std.ArrayList;
 
 pub const Alias = struct {
-    name: [10]u8,
+    name: []const u8,
     mac: []const u8,
     broadcast: []const u8,
     fqdn: []const u8,
