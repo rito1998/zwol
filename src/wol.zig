@@ -47,19 +47,16 @@ pub fn broadcastMagicPacket(io: Io, mac: []const u8, broadcast: ?[]const u8, cou
     };
     defer socket.close(io);
 
-    // TODO: currently broken on windows for zig master: skip setsockopt SO_BROADCAST
-    if (builtin.target.os.tag != .windows) {
-        const option_value: u32 = 1;
-        posix.setsockopt(
-            socket.handle,
-            posix.SOL.SOCKET,
-            posix.SO.BROADCAST,
-            std.mem.asBytes(&option_value),
-        ) catch |err| {
-            log.err("Failed to set socket option to enable broadcast: {}", .{err});
-            return err;
-        };
-    }
+    const option_value: u32 = 1;
+    posix.setsockopt(
+        socket.handle,
+        posix.SOL.SOCKET,
+        posix.SO.BROADCAST,
+        std.mem.asBytes(&option_value),
+    ) catch |err| {
+        log.err("Failed to set socket option to enable broadcast: {}", .{err});
+        return err;
+    };
 
     // Send the magic packet
     for (0..actual_count) |_| {
@@ -168,20 +165,18 @@ pub fn relayBegin(io: Io, listen_addr: Io.net.IpAddress, relay_addr: Io.net.IpAd
     };
     defer socket.close(io);
 
-    // TODO: currently broken on windows for zig master: skip setsockopt SO_BROADCAST
-    if (builtin.target.os.tag != .windows) {
-        // Enable socket broadcast (setting SO_BROADCAST to anything other than empty string enables broadcast)
-        const option_value: u32 = 1;
-        posix.setsockopt(
-            socket.handle,
-            posix.SOL.SOCKET,
-            posix.SO.BROADCAST,
-            std.mem.asBytes(&option_value),
-        ) catch |err| {
-            log.err("Failed to set socket option to enable broadcast: {}", .{err});
-            return err;
-        };
-    }
+    // Enable socket broadcast (setting SO_BROADCAST to anything other than empty string enables broadcast)
+    const option_value: u32 = 1;
+    posix.setsockopt(
+        socket.handle,
+        posix.SOL.SOCKET,
+        posix.SO.BROADCAST,
+        std.mem.asBytes(&option_value),
+    ) catch |err| {
+        log.err("Failed to set socket option to enable broadcast: {}", .{err});
+        return err;
+    };
+
     log.info("Listening for WOL packets on {f}, relaying to {f}...", .{ listen_addr.ip4, relay_addr.ip4 });
     var buf: [102]u8 = undefined;
     while (true) {
