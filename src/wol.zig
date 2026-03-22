@@ -185,8 +185,6 @@ pub fn relayBegin(io: Io, listen_addr: Io.net.IpAddress, relay_addr: Io.net.IpAd
     log.info("Listening for WOL packets on {f}, relaying to {f}...", .{ listen_addr.ip4, relay_addr.ip4 });
     var buf: [102]u8 = undefined;
     while (true) {
-        try io.sleep(.fromSeconds(1), .real);
-
         const incoming_message = socket.receive(io, &buf) catch continue;
 
         if (incoming_message.data.len != 102) {
@@ -206,5 +204,7 @@ pub fn relayBegin(io: Io, listen_addr: Io.net.IpAddress, relay_addr: Io.net.IpAd
             log.err("Failed to relay packet to {f}: {}", .{ relay_addr.ip4, err });
             return err;
         };
+
+        try io.sleep(.fromMilliseconds(500), .real);
     }
 }
