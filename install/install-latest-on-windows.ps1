@@ -1,4 +1,4 @@
-$repo = "rktr1998/zig-wol"
+$repo = "rito1998/zig-wol"
 $apiUrl = "https://api.github.com/repos/$repo/releases/latest"
 
 $latestRelease = Invoke-RestMethod -Uri $apiUrl

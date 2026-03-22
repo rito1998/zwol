@@ -16,5 +16,5 @@ jobs:
         env:
           SSH_PRIVATE_KEY: ${{ secrets.CODEBERG_KEY }}
         with:
-          source-repo: "git@github.com:rktr1998/zig-wol.git"
-          destination-repo: "ssh://git@codeberg.org/rktr1998/zig-wol.git"   
+          source-repo: "git@github.com:rito1998/zig-wol.git"
+          destination-repo: "ssh://git@codeberg.org/rito/zig-wol.git"   

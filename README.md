@@ -1,8 +1,8 @@
-![GitHub License](https://img.shields.io/github/license/rktr1998/zig-wol)
+![GitHub License](https://img.shields.io/github/license/rito1998/zig-wol)
 
 # Zig-wol
 
-Written in the [Zig](https://github.com/ziglang/zig) programming language, [zig-wol](https://github.com/rktr1998/zig-wol) is a CLI utility for sending wake-on-lan magic packets to wake up a computer in a LAN given its MAC address.
+Written in the [Zig](https://github.com/ziglang/zig) programming language, [zig-wol](https://github.com/rito1998/zig-wol) is a CLI utility for sending wake-on-lan magic packets to wake up a computer in a LAN given its MAC address.
 
 ## Features
 
@@ -11,12 +11,12 @@ Written in the [Zig](https://github.com/ziglang/zig) programming language, [zig-
 
 ## Installation
 
-Pre-compiled binaries of [zig-wol](https://github.com/rktr1998/zig-wol) are distributed with [releases](https://github.com/rktr1998/zig-wol/releases): download the binary for your architecture and operating system and you are good to go!
+Pre-compiled binaries of [zig-wol](https://github.com/rito1998/zig-wol) are distributed with [releases](https://github.com/rito1998/zig-wol/releases): download the binary for your architecture and operating system and you are good to go!
 
 ### Install latest on Windows using PowerShell
 
 ```pwsh
-Invoke-RestMethod "https://raw.githubusercontent.com/rktr1998/zig-wol/refs/heads/main/install/install-latest-on-windows.ps1" | Invoke-Expression
+Invoke-RestMethod "https://raw.githubusercontent.com/rito1998/zig-wol/refs/heads/main/install/install-latest-on-windows.ps1" | Invoke-Expression
 ```
 
 This command downloads the latest release for your processor architecture and **installs** the program at `C:\Users\%username%\.zig-wol`. To **uninstall** zig-wol, simply delete this folder.
@@ -24,7 +24,7 @@ This command downloads the latest release for your processor architecture and **
 ### Install latest on Linux
 
 ```sh
-bash <(curl -sSL https://raw.githubusercontent.com/rktr1998/zig-wol/refs/heads/main/install/install-latest-on-linux.sh)
+bash <(curl -sSL https://raw.githubusercontent.com/rito1998/zig-wol/refs/heads/main/install/install-latest-on-linux.sh)
 ```
 
 This command downloads the latest release for your processor architecture and **installs** the program at `/home/$USER/.zig-wol`. To **uninstall** zig-wol, simply delete this folder.
@@ -32,7 +32,7 @@ This command downloads the latest release for your processor architecture and **
 ### Install latest on MacOS
 
 ```sh
-bash <(curl -sSL https://raw.githubusercontent.com/rktr1998/zig-wol/refs/heads/main/install/install-latest-on-macos.sh)
+bash <(curl -sSL https://raw.githubusercontent.com/rito1998/zig-wol/refs/heads/main/install/install-latest-on-macos.sh)
 ```
 
 This command downloads the latest release for your processor architecture and **installs** the program at `/home/$USER/.zig-wol`. To **uninstall** zig-wol, simply delete this folder.
@@ -75,7 +75,7 @@ Run `zig-wol help` to display all subcommands and `zig-wol <subcommand> --help` 
 ### 1. Clone the Repository
 
 ```sh
-git clone https://github.com/rktr1998/zig-wol.git
+git clone https://github.com/rito1998/zig-wol.git
 cd zig-wol
 ```
 
@@ -92,7 +92,7 @@ This command compiles the source code and places the executable in the `zig-out/
 It is possible to use the wake-on-lan functionality of this project as a library.
 
 ```sh
-zig fetch --save=wol git+https://github.com/rktr1998/zig-wol
+zig fetch --save=wol git+https://github.com/rito1998/zig-wol
 ```
 
 Add the wol module from the fetched dependency in build.zig.
@@ -190,10 +190,10 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 
 ## Star History
 
-<a href="https://www.star-history.com/?repos=rktr1998%2Fzig-wol&type=date&legend=top-left">
+<a href="https://www.star-history.com/?repos=rito1998%2Fzig-wol&type=date&legend=top-left">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/image?repos=rktr1998/zig-wol&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/image?repos=rktr1998/zig-wol&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/image?repos=rktr1998/zig-wol&type=date&legend=top-left" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/image?repos=rito1998/zig-wol&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/image?repos=rito1998/zig-wol&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/image?repos=rito1998/zig-wol&type=date&legend=top-left" />
  </picture>
 </a>

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-repo="rktr1998/zig-wol"
+repo="rito1998/zig-wol"
 apiUrl="https://api.github.com/repos/$repo/releases/latest"
 
 latestRelease=$(curl -s $apiUrl)
