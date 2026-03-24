@@ -12,7 +12,7 @@
             .hash = "eui-0.1.0--PejydknAAD2KJscHXtED07E4lNpxKi9lJK40-Q30HW3",
         },
     },
-    .minimum_zig_version = "0.16.0-dev.2962+08416b44f",
+    .minimum_zig_version = "0.16.0-dev.2979+e93834410",
     .paths = .{
         "build.zig",
         "build.zig.zon",
