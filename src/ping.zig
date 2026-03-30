@@ -83,6 +83,7 @@ pub fn hostnameLookup(io: Io, fqdn: []const u8, result: *?Io.net.IpAddress) Io.C
     var buf_canonical_name: [255]u8 = undefined;
     var buf_lookup_result: [16]Io.net.HostName.LookupResult = undefined;
     var queue: Io.Queue(Io.net.HostName.LookupResult) = .init(&buf_lookup_result);
+
     Io.net.HostName.lookup(
         .{ .bytes = fqdn },
         io,
@@ -102,4 +103,20 @@ pub fn hostnameLookup(io: Io, fqdn: []const u8, result: *?Io.net.IpAddress) Io.C
 
     std.log.info("hostnameLookup: {s} -> {f}", .{ fqdn, lookup_result.address });
     result.* = lookup_result.address;
+}
+
+test "hostnameLookup localhost IPv6" {
+    var result: ?Io.net.IpAddress = undefined;
+    hostnameLookup(testing.io, "localhost", &result) catch |err| {
+        std.log.info("hostnameLookup failed: {}", .{err});
+        return;
+    };
+
+    switch (result.?) {
+        .ip4 => return error.SkipZigTest,
+        .ip6 => {
+            const expected_ip = Io.net.IpAddress.parseLiteral("[::1]") catch unreachable;
+            try testing.expect(std.mem.eql(u8, &result.?.ip6.bytes, &expected_ip.ip6.bytes));
+        },
+    }
 }
