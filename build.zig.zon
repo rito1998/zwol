@@ -4,15 +4,15 @@
     .version = "0.7.0",
     .dependencies = .{
         .clap = .{
-            .url = "git+https://github.com/Hejsil/zig-clap#23fa3eb4b056eeacc8349aa330e9e7102daf8c71",
-            .hash = "clap-0.11.0-oBajBxToAQBCuP2IJxUwO2-coRk96cBGDrJezaNZjsQN",
+            .url = "git+https://github.com/Hejsil/zig-clap#fc1e5cc3f6d9d3001112385ee6256d694e959d2f",
+            .hash = "clap-0.11.0-oBajB7foAQC3Iyn4IVCkUdYaOVVng5IZkSncySTjNig1",
         },
         .eui = .{
-            .url = "git+https://github.com/rito1998/zig-eui#c8939c54d2d4e3319c8b720d4cb90470b2322204",
-            .hash = "eui-0.1.0--PejydknAAD2KJscHXtED07E4lNpxKi9lJK40-Q30HW3",
+            .url = "git+https://github.com/rito1998/zig-eui#74b86720ca9409aeb2cb4fd0bf8baf3690cd44cc",
+            .hash = "eui-0.1.0--PejydknAABOPVdr_NLff_ogB87HN9-ikvu4lFnqHERR",
         },
     },
-    .minimum_zig_version = "0.16.0-dev.3013+abd131e33",
+    .minimum_zig_version = "0.16.0-dev.3039+b490412cd",
     .paths = .{
         "build.zig",
         "build.zig.zon",
