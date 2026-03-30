@@ -43,7 +43,7 @@ pub fn broadcastMagicPacket(io: Io, mac: []const u8, broadcast: ?[]const u8, cou
         .{
             .mode = .dgram,
             .protocol = .udp,
-            //.allow_broadcast = true,
+            .allow_broadcast = true,
         },
     ) catch |err| {
         log.err("Failed to bind UDP socket: {}", .{err});
@@ -155,7 +155,7 @@ pub fn relayBegin(io: Io, listen_addr: Io.net.IpAddress, relay_addr: Io.net.IpAd
         .{
             .mode = .dgram,
             .protocol = .udp,
-            //.allow_broadcast = true,
+            .allow_broadcast = true,
         },
     ) catch |err| {
         log.err("Failed to bind UDP socket to {f}: {}", .{ listen_addr.ip4, err });
