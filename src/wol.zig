@@ -78,8 +78,8 @@ pub fn isMagicPacket(sequence: [102]u8) bool {
     return true;
 }
 
-test "isMagicPacket (valid)" {
-    const valid_packet: [102]u8 = [_]u8{
+test isMagicPacket {
+    const valid: [102]u8 = [_]u8{
         0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
         0x01, 0x02, 0x03, 0x04, 0x05, 0x06,
         0x01, 0x02, 0x03, 0x04, 0x05, 0x06,
@@ -98,11 +98,9 @@ test "isMagicPacket (valid)" {
         0x01, 0x02, 0x03, 0x04, 0x05, 0x06,
         0x01, 0x02, 0x03, 0x04, 0x05, 0x06,
     };
-    try testing.expect(isMagicPacket(valid_packet));
-}
+    try testing.expect(isMagicPacket(valid));
 
-test "isMagicPacket (invalid - broken header)" {
-    const invalid_packet_broken_header: [102]u8 = [_]u8{
+    const broken_header: [102]u8 = [_]u8{
         0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xAA, // broken header
         0x01, 0x02, 0x03, 0x04, 0x05, 0x06,
         0x01, 0x02, 0x03, 0x04, 0x05, 0x06,
@@ -121,11 +119,9 @@ test "isMagicPacket (invalid - broken header)" {
         0x01, 0x02, 0x03, 0x04, 0x05, 0x06,
         0x01, 0x02, 0x03, 0x04, 0x05, 0x06,
     };
-    try testing.expect(!isMagicPacket(invalid_packet_broken_header));
-}
+    try testing.expect(!isMagicPacket(broken_header));
 
-test "isMagicPacket (invalid - broken repetition)" {
-    const invalid_packet_broken_repetition: [102]u8 = [_]u8{
+    const broken_repetition: [102]u8 = [_]u8{
         0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
         0x01, 0x02, 0x03, 0x04, 0x05, 0x06,
         0x01, 0x02, 0x03, 0x04, 0x05, 0x06,
@@ -144,7 +140,7 @@ test "isMagicPacket (invalid - broken repetition)" {
         0x01, 0x02, 0x03, 0x04, 0x05, 0x06,
         0x01, 0x02, 0x03, 0x04, 0x05, 0xFF, // broken repetition
     };
-    try testing.expect(!isMagicPacket(invalid_packet_broken_repetition));
+    try testing.expect(!isMagicPacket(broken_repetition));
 }
 
 /// Never returns. Listens for magic packets and relays them to the specified address and port.

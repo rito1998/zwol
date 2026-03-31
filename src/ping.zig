@@ -54,7 +54,7 @@ pub fn systemPingFqdn(allocator: Allocator, io: Io, fqdn: []const u8, result: *b
     }
 }
 
-test "systemPingFqdn" {
+test systemPingFqdn {
     var result: bool = undefined;
 
     try systemPingFqdn(testing.allocator, testing.io, "127.0.0.1", &result);
@@ -105,7 +105,7 @@ pub fn hostnameLookup(io: Io, fqdn: []const u8, result: *?Io.net.IpAddress) Io.C
     result.* = lookup_result.address;
 }
 
-test "hostnameLookup localhost IPv6" {
+test hostnameLookup {
     var result: ?Io.net.IpAddress = undefined;
     hostnameLookup(testing.io, "localhost", &result) catch |err| {
         log.info("hostnameLookup failed: {}", .{err});

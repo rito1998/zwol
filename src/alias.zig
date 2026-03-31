@@ -81,7 +81,7 @@ pub fn readAliasFile(allocator: Allocator, io: Io) ArrayList(Alias) {
     return ArrayList(Alias).fromOwnedSlice(alias_list_slice);
 }
 
-test "readAliasFile" {
+test readAliasFile {
     const allocator = testing.allocator;
     const io = testing.io;
 
@@ -117,7 +117,7 @@ pub fn writeAliasFile(allocator: Allocator, io: Io, alias_slice: []Alias) void {
     };
 }
 
-test "writeAliasFile" {
+test writeAliasFile {
     const allocator = testing.allocator;
     const io = testing.io;
 
@@ -146,7 +146,7 @@ pub fn getAliasFilePath(allocator: Allocator, io: Io) []u8 {
     return file_path;
 }
 
-test "getAliasFilePath" {
+test getAliasFilePath {
     const allocator = testing.allocator;
     const io = testing.io;
 
@@ -167,7 +167,7 @@ pub fn aliasFileExists(allocator: Allocator, io: Io) bool {
     return true;
 }
 
-test "aliasFileExists" {
+test aliasFileExists {
     const allocator = testing.allocator;
     const io = testing.io;
 
