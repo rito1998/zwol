@@ -1,56 +1,122 @@
 const std = @import("std");
 const builtin = @import("builtin");
+const Allocator = std.mem.Allocator;
+const Io = std.Io;
+const log = std.log;
+const testing = std.testing;
 
-/// Pings a machine given a FQDN using the system's ping command in a multithreaded context.
-/// The is_alive pointer is shared between threads, a mutex is used to ensure thread safety.
-/// If ping_forever is true, run indefinitely with a 5 second sleep between pings.
-pub fn ping_with_os_command_multithread(allocator: std.mem.Allocator, alias_fqdn: []const u8, ping_forever: bool, mutex: *std.Thread.Mutex, is_alive: *bool) !void {
-    while (true) {
-        const ping_result = ping_with_os_command(allocator, alias_fqdn) catch |err| {
-            return err;
-        };
-
-        // lock the mutex while updating the shared is_alive variable
-        mutex.lock();
-        is_alive.* = ping_result;
-        mutex.unlock();
-
-        if (!ping_forever) break;
-        std.Thread.sleep(5 * std.time.ns_per_s); // do not spam too many pings if pinging forever
-    }
-}
-
-/// Pings a machine given a FQDN using the system's ping command, returns true if the ping was successful, false otherwise.
-pub fn ping_with_os_command(allocator: std.mem.Allocator, fqdn: []const u8) !bool {
-    const args = switch (builtin.target.os.tag) {
-        .linux, .macos => &[_][]const u8{ "ping", "-c", "1", "-W", "1", fqdn },
-        .windows => &[_][]const u8{ "ping", "-n", "1", "-w", "1000", fqdn },
-        else => @compileError("Unsupported OS"),
+/// Pings an IP address with system's ping command, returns true if successful.
+pub fn systemPingIpAddress(allocator: Allocator, io: Io, address: Io.net.IpAddress, result: *bool) Io.Cancelable!void {
+    var buf: [255]u8 = undefined;
+    const address_literal = switch (address) {
+        .ip4 => blk: {
+            const literal = std.fmt.bufPrint(&buf, "{f}", .{address.ip4}) catch return Io.Cancelable.Canceled;
+            if (std.mem.findLast(u8, literal, ":")) |index| {
+                break :blk literal[0..index];
+            } else {
+                break :blk literal;
+            }
+        },
+        .ip6 => std.fmt.bufPrint(&buf, "{f}", .{address.ip6}) catch return Io.Cancelable.Canceled,
     };
 
-    const result = try std.process.Child.run(.{
-        .allocator = allocator,
-        .argv = args,
-    });
-    defer allocator.free(result.stderr);
-    defer allocator.free(result.stdout);
+    //log.info("address_literal -> {s}", .{address_literal});
 
-    if (result.term.Exited == 0 and
-        std.mem.indexOf(u8, result.stdout, "unreachable") == null and
-        std.mem.indexOf(u8, result.stderr, "unreachable") == null)
-    {
-        return true;
-    } else {
-        return false;
+    const args = switch (builtin.target.os.tag) {
+        // On Windows, depend on PowerShell Test-NetConnection: it prints True to stdout if
+        // the ICMP reached the target. Note: ping.exe does not distinguish (by exit code)
+        // whether the ICMP reached the target or an intermediary.
+        .windows => &[_][]const u8{ "PowerShell", "Test-NetConnection", address_literal, "-InformationLevel", "Quiet" },
+        else => &[_][]const u8{ "ping", "-c", "1", "-W", "1", address_literal },
+    };
+
+    const run_result = std.process.run(allocator, io, .{
+        .argv = args,
+    }) catch return Io.Cancelable.Canceled;
+    defer allocator.free(run_result.stderr);
+    defer allocator.free(run_result.stdout);
+
+    switch (builtin.target.os.tag) {
+        .windows => result.* = run_result.term.exited == 0 and std.mem.find(u8, run_result.stdout, "True") == 0,
+        else => result.* = run_result.term.exited == 0,
     }
 }
 
-test "ping_with_os_command" {
-    var da = std.heap.DebugAllocator(.{}){};
-    defer _ = da.deinit();
-    const gpa = da.allocator();
+/// Resolves a FQDN and pings it with system ping utility.
+pub fn systemPingFqdn(allocator: Allocator, io: Io, fqdn: []const u8, result: *bool) Io.Cancelable!void {
+    var address: ?Io.net.IpAddress = undefined;
+    hostnameLookup(io, fqdn, &address) catch return Io.Cancelable.Canceled;
+    if (address) |addr| {
+        systemPingIpAddress(allocator, io, addr, result) catch return Io.Cancelable.Canceled;
+    } else {
+        result.* = false;
+        return Io.Cancelable.Canceled;
+    }
+}
 
-    try std.testing.expectEqual(true, try ping_with_os_command(gpa, "127.0.0.1"));
-    try std.testing.expectEqual(true, try ping_with_os_command(gpa, "localhost"));
-    try std.testing.expectEqual(false, try ping_with_os_command(gpa, "256.256.256.256"));
+test systemPingFqdn {
+    var result: bool = undefined;
+
+    try systemPingFqdn(testing.allocator, testing.io, "127.0.0.1", &result);
+    try testing.expect(result);
+
+    try systemPingFqdn(testing.allocator, testing.io, "localhost", &result);
+    try testing.expect(result);
+
+    try testing.expectError(
+        Io.Cancelable.Canceled,
+        systemPingFqdn(testing.allocator, testing.io, "invalid hostname", &result),
+    );
+
+    try testing.expectError(
+        Io.Cancelable.Canceled,
+        systemPingFqdn(testing.allocator, testing.io, "256.256.256.256", &result),
+    );
+}
+
+pub fn hostnameLookup(io: Io, fqdn: []const u8, result: *?Io.net.IpAddress) Io.Cancelable!void {
+    const hostname = Io.net.HostName.init(fqdn) catch |err| {
+        log.err("hostnameLookup: {s} -> {}", .{ fqdn, err });
+        result.* = null;
+        return Io.Cancelable.Canceled;
+    };
+
+    var buf_lookup_result: [16]Io.net.HostName.LookupResult = undefined;
+    var queue: Io.Queue(Io.net.HostName.LookupResult) = .init(&buf_lookup_result);
+    defer queue.close(io);
+
+    hostname.lookup(
+        io,
+        &queue,
+        .{ .port = 0 },
+    ) catch |err| {
+        log.err("hostnameLookup: {s} -> {}", .{ fqdn, err });
+        result.* = null;
+        return Io.Cancelable.Canceled;
+    };
+
+    const lookup_result = queue.getOne(io) catch |err| {
+        log.err("hostnameLookup: {s} -> {}", .{ fqdn, err });
+        result.* = null;
+        return Io.Cancelable.Canceled;
+    };
+
+    log.info("hostnameLookup: {s} -> {f}", .{ fqdn, lookup_result.address });
+    result.* = lookup_result.address;
+}
+
+test hostnameLookup {
+    var result: ?Io.net.IpAddress = undefined;
+    hostnameLookup(testing.io, "localhost", &result) catch |err| {
+        log.info("hostnameLookup failed: {}", .{err});
+        return;
+    };
+
+    switch (result.?) {
+        .ip4 => return error.SkipZigTest,
+        .ip6 => {
+            const expected_ip = Io.net.IpAddress.parseLiteral("[::1]") catch unreachable;
+            try testing.expect(std.mem.eql(u8, &result.?.ip6.bytes, &expected_ip.ip6.bytes));
+        },
+    }
 }

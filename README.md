@@ -1,60 +1,59 @@
 ![GitHub License](https://img.shields.io/github/license/rito1998/zig-wol)
+![GitHub License](https://img.shields.io/github/license/rito1998/zig-wol)
 
 # Zig-wol
 
-Written in the [Zig](https://github.com/ziglang/zig) programming language, [zig-wol](https://github.com/rito1998/zig-wol) is a CLI utility for sending wake-on-lan magic packets to wake up a computer in a LAN given its MAC address.
+A CLI utility for sending wake-on-lan magic packets to wake up a computer in a LAN given its MAC address. Find [zig-wol](https://github.com/rito1998/zig-wol) also on [Codeberg](https://codeberg.org/rito/zig-wol).
+
 
 ## Features
 
-- Send WOL magic packets to wake up devices on the LAN.
-- Cross-platform support for windows, macos and linux for both x86_64 and aarch64 architectures.
+- Broadcast magic packets to wake up devices on the local network.
+- Cross-platform support for Windows, macOS and Linux for both x86_64 and aarch64 architectures.
 
 ## Installation
 
-Pre-compiled binaries of [zig-wol](https://github.com/rito1998/zig-wol) are distributed with [releases](https://github.com/rito1998/zig-wol/releases): download the binary for your architecture and operating system and you are good to go!
+Pre-compiled binaries of [zig-wol](https://github.com/rito1998/zig-wol) are distributed with [releases](https://github.com/rito1998/zig-wol/releases). The installation scripts below download the latest release for your processor architecture and **install** the program at `C:\Users\%username%\.zig-wol` on Windows and `/home/$USER/.zig-wol` on Linux and macOS. To **uninstall** zig-wol, simply delete this folder.
 
-### Install latest on Windows using PowerShell
+### Windows
 
 ```pwsh
 Invoke-RestMethod "https://raw.githubusercontent.com/rito1998/zig-wol/refs/heads/main/install/install-latest-on-windows.ps1" | Invoke-Expression
+Invoke-RestMethod "https://raw.githubusercontent.com/rito1998/zig-wol/refs/heads/main/install/install-latest-on-windows.ps1" | Invoke-Expression
 ```
 
-This command downloads the latest release for your processor architecture and **installs** the program at `C:\Users\%username%\.zig-wol`. To **uninstall** zig-wol, simply delete this folder.
-
-### Install latest on Linux
+### Linux
 
 ```sh
 bash <(curl -sSL https://raw.githubusercontent.com/rito1998/zig-wol/refs/heads/main/install/install-latest-on-linux.sh)
+bash <(curl -sSL https://raw.githubusercontent.com/rito1998/zig-wol/refs/heads/main/install/install-latest-on-linux.sh)
 ```
 
-This command downloads the latest release for your processor architecture and **installs** the program at `/home/$USER/.zig-wol`. To **uninstall** zig-wol, simply delete this folder.
-
-### Install latest on MacOS
+### macOS
 
 ```sh
 bash <(curl -sSL https://raw.githubusercontent.com/rito1998/zig-wol/refs/heads/main/install/install-latest-on-macos.sh)
+bash <(curl -sSL https://raw.githubusercontent.com/rito1998/zig-wol/refs/heads/main/install/install-latest-on-macos.sh)
 ```
-
-This command downloads the latest release for your processor architecture and **installs** the program at `/home/$USER/.zig-wol`. To **uninstall** zig-wol, simply delete this folder.
 
 ## Usage
 
-Wake a machine on your LAN by broadcasting the magic packet: replace `<MAC>` with the target MAC (e.g. `9A-63-A1-FF-8B-4C`).
+Wake a machine on the LAN by broadcasting a magic packet: replace `<MAC>` with the target MAC (e.g. `9A-63-A1-FF-8B-4C`).
 
 ```sh
 zig-wol wake <MAC>
 ```
 
-Create an alias for a MAC, list all aliases or remove one.
+Create an alias for a MAC address, list all aliases, or remove one.
 
 ```sh
-zig-wol alias <NAME> <MAC> --broadcast <ADDR>   # create an alias and set its broadcast
+zig-wol alias <NAME> <MAC> --broadcast <ADDR:PORT>   # create an alias and set its broadcast
 zig-wol wake <NAME>                             # wake a machine by alias
 ```
 
-The optional `--broadcast` (e.g. 192.168.0.255) is important if there are multiple network interfaces. Setting the correct subnet broadcast address ensures the OS chooses the right network interface. If not specified, 255.255.255.255 is used.
+The optional `--broadcast` (e.g. 192.168.0.255:9) is important if there are multiple network interfaces. Setting the correct subnet broadcast address ensures the OS chooses the right network interface. If not specified, 255.255.255.255:9 is used.
 
-Use `zig-wol status` to ping all machines by their FQDN (if defined on alias creation) and display the status.
+Use `zig-wol ping` to ping all machines by their FQDNs (if defined on alias creation) and display the result.
 
 ```sh
 🟢  office-server
@@ -70,11 +69,12 @@ Run `zig-wol help` to display all subcommands and `zig-wol <subcommand> --help` 
 
 ### Prerequisites
 
-- [Zig (v0.15.1)](https://ziglang.org/download/) installed on your system.
+- [Zig (v0.16)](https://ziglang.org/download/) installed on your system.
 
 ### 1. Clone the Repository
 
 ```sh
+git clone https://github.com/rito1998/zig-wol.git
 git clone https://github.com/rito1998/zig-wol.git
 cd zig-wol
 ```
@@ -92,33 +92,36 @@ This command compiles the source code and places the executable in the `zig-out/
 It is possible to use the wake-on-lan functionality of this project as a library.
 
 ```sh
-zig fetch --save=wol git+https://github.com/rito1998/zig-wol
+zig fetch --save git+https://github.com/rito1998/zig-wol
 ```
 
-Add the wol module from the fetched dependency in build.zig.
+Add the wol module from the fetched dependency in `build.zig`.
 
-```c
+```zig
 const wol_module = b.dependency("wol", .{}).module("wol");
-exe.root_module.addImport("wol", wol_module); // e.g. add it to an exe
+exe.root_module.addImport("wol", wol_module); // e.g. add it to an exe root module
 ```
 
-Import the module in Zig.
+Import the module in `main.zig` and broadcast a magic packet.
 
-```c
+```zig
 const wol = @import("wol");
+
+pub fn main(init: std.process.Init) !void {
+    try wol.broadcastMagicPacket(init.io, "11-22-33-44-55-66", 10, "255.255.255.255:9", 1);
+}
 ```
 
 ## Remote wake-on-lan
 
-Using the subcommand **relay** it is possible to make zig-wol work as a beacon that listens on `--listen_address` for inbound wake-on-lan magic packets and relays them to a `--relay_address`.
-The parameters --listen_port and --relay_port are optional and default to port 9 if unspecified, it is recomended to specify two different port numbers.
+Use the subcommand **relay** to make zig-wol work as a beacon that listens on a port for inbound wake-on-lan magic packets, for example coming from a router, and relays them, usually to the LAN broadcast in order to wake devices.
 
 ```sh
-zig-wol relay --listen_address 192.168.0.10 --listen_port 9999 --relay_address 192.168.0.255 --relay_port 9
+zig-wol relay 192.168.0.10:9999 192.168.0.255:9
 ```
 
-A realistic example usage, using the command above as a reference, is to have a home LAN comprised of one or more powerful machines that need to be woken remotely and an always-on low-power machine, like a raspberry-pi, that runs the `zig-wol relay` repeater.
-Enable port-forwarding in the router settings to forward inbound traffic from some specific port of choice to 9999/udp of the raspberry-pi, then zig-wol relay service relays the magic packets on the local subnet broadcast allowing to wake the other machines from outside the LAN, provided the router public address is known.
+A realistic example usage, using the command above as a reference, is to have a home LAN comprised of one or more powerful machines that need to be woken remotely and an always-on low-power machine, like a Raspberry Pi, that runs the `zig-wol relay` repeater.
+Enable port-forwarding in the router settings to forward inbound traffic from some specific port of choice to 9999/udp of the Raspberry Pi, then zig-wol relay service relays the magic packets on the local subnet broadcast allowing to wake the other machines from outside the LAN, provided the router public address is known.
 
 ![relay-diagram](docs/assets/relay-diagram.png)
 
@@ -157,9 +160,7 @@ AmbientCapabilities=CAP_NET_BIND_SERVICE
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 WorkingDirectory=/home/USERNAME/.zig-wol
 ExecStartPre=/bin/sleep 5
-ExecStart=/home/USERNAME/.zig-wol/zig-wol relay \\
-  --listen_address=192.168.0.10 --listen_port=9999 \\
-  --relay_address=192.168.0.255 --relay_port=9
+ExecStart=/home/USERNAME/.zig-wol/zig-wol relay 192.168.0.10:9999 192.168.0.255:9
 Restart=on-failure
 RestartSec=10s
 
@@ -191,7 +192,11 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 ## Star History
 
 <a href="https://www.star-history.com/?repos=rito1998%2Fzig-wol&type=date&legend=top-left">
+<a href="https://www.star-history.com/?repos=rito1998%2Fzig-wol&type=date&legend=top-left">
  <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/image?repos=rito1998/zig-wol&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/image?repos=rito1998/zig-wol&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/image?repos=rito1998/zig-wol&type=date&legend=top-left" />
    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/image?repos=rito1998/zig-wol&type=date&theme=dark&legend=top-left" />
    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/image?repos=rito1998/zig-wol&type=date&legend=top-left" />
    <img alt="Star History Chart" src="https://api.star-history.com/image?repos=rito1998/zig-wol&type=date&legend=top-left" />

@@ -4,40 +4,53 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    // --------------------------- IMPORTS -----------------------------
+    const clap = b.dependency("clap", .{}).module("clap");
+    const eui = b.dependency("eui", .{}).module("eui");
+    const build_zig_zon = b.createModule(.{
+        .root_source_file = b.path("build.zig.zon"),
+        .target = target,
+        .optimize = optimize,
+    });
+
     // --------------------------- WOL MODULE ---------------------------
     // note: wol module is created so that other projects can use it with zig fetch and @import("wol").
-    const wol_module = b.addModule("wol", .{
+    const wol = b.addModule("wol", .{
         .root_source_file = b.path("src/wol.zig"),
         .target = target,
         .optimize = optimize,
+        .imports = &.{
+            .{ .name = "eui", .module = eui },
+        },
     });
 
     // --------------------------- EXECUTABLE ---------------------------
     // Create, add and install the exe
     const exe = b.addExecutable(.{
+        .name = "zig-wol",
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/main.zig"),
             .target = target,
             .optimize = optimize,
-            .link_libc = true,
+            .imports = &.{
+                .{ .name = "wol", .module = wol },
+                .{ .name = "clap", .module = clap },
+                .{ .name = "eui", .module = eui },
+                .{ .name = "build_zig_zon", .module = build_zig_zon },
+            },
         }),
-        .name = "zig-wol",
     });
 
-    // Add dependencies from local modules
-    exe.root_module.addImport("wol", wol_module);
-
-    // Add dependencies from fetched third-party libs (see build.zig.zon)
-    exe.root_module.addImport("clap", b.dependency("clap", .{}).module("clap"));
-
-    // Create and import a module for build.zig.zon, allows using its .version field in the codebase
-    exe.root_module.addImport("build_zig_zon", b.createModule(.{
-        .root_source_file = b.path("build.zig.zon"),
-        .target = target,
-        .optimize = optimize,
-    }));
-
     b.installArtifact(exe);
+
+    // ------------------------------ RUN -------------------------------
+    const run_step = b.step("run", "Run the program");
+    const run_cmd = b.addRunArtifact(exe);
+    run_step.dependOn(&run_cmd.step);
+    run_cmd.step.dependOn(b.getInstallStep());
+    if (b.args) |args| {
+        run_cmd.addArgs(args);
+    }
 
     // ------------------------------ DOCS ------------------------------
     // Generate documentation step (run this with "zig build docs")

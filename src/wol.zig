@@ -1,73 +1,12 @@
 const std = @import("std");
+const builtin = @import("builtin");
+const Io = std.Io;
 const posix = std.posix;
+const log = std.log;
+const testing = std.testing;
+pub const Eui48 = @import("eui").Eui48;
 
-/// Parse a MAC address string into an array of 6 bytes.
-/// Expects length 17 and separator either "-" or ":" (e.g. 01-23-45-AB-CD-EF)
-pub fn parse_mac(mac: []const u8) ![6]u8 {
-    if (mac.len != 17) return error.InvalidMacAddress;
-
-    // Expect either ':' or '-'
-    const sep: u8 = mac[2];
-    if (sep != ':' and sep != '-') return error.InvalidMacAddress;
-
-    // Ensure all separators are the same
-    var i: usize = 2;
-    while (i < mac.len) : (i += 3) {
-        if (mac[i] != sep) return error.InvalidMacAddress;
-    }
-
-    var mac_split_iterator = std.mem.tokenizeSequence(u8, mac, &.{sep});
-    var mac_octets: [6]u8 = undefined;
-    var idx: usize = 0;
-
-    while (mac_split_iterator.next()) |mac_part| {
-        if (idx >= 6) return error.InvalidMacAddress;
-        mac_octets[idx] = std.fmt.parseInt(u8, mac_part, 16) catch return error.InvalidMacAddress;
-        idx += 1;
-    }
-
-    if (idx != 6) return error.InvalidMacAddress;
-
-    return mac_octets;
-}
-
-test "parse_mac valid cases" {
-    try std.testing.expectEqual(parse_mac("01:23:45:67:89:ab"), [6]u8{ 0x01, 0x23, 0x45, 0x67, 0x89, 0xab });
-    try std.testing.expectEqual(parse_mac("01:23:45:67:89:Ab"), [6]u8{ 0x01, 0x23, 0x45, 0x67, 0x89, 0xab });
-    try std.testing.expectEqual(parse_mac("01:23:45:67:89:AB"), [6]u8{ 0x01, 0x23, 0x45, 0x67, 0x89, 0xab });
-    try std.testing.expectEqual(parse_mac("01-23-45-67-89-ab"), [6]u8{ 0x01, 0x23, 0x45, 0x67, 0x89, 0xAB });
-    try std.testing.expectEqual(parse_mac("01-23-45-67-89-Ab"), [6]u8{ 0x01, 0x23, 0x45, 0x67, 0x89, 0xAB });
-    try std.testing.expectEqual(parse_mac("01-23-45-67-89-AB"), [6]u8{ 0x01, 0x23, 0x45, 0x67, 0x89, 0xAB });
-}
-
-test "parse_mac invalid cases" {
-    try std.testing.expectError(error.InvalidMacAddress, parse_mac("0123456789AB")); // No separators
-    try std.testing.expectError(error.InvalidMacAddress, parse_mac("01:23:45:67:89")); // Too short
-    try std.testing.expectError(error.InvalidMacAddress, parse_mac("01:23:45:67:89:AB:CD")); // Too long
-    try std.testing.expectError(error.InvalidMacAddress, parse_mac("01:23:45:67:89:GG")); // Invalid hex
-    try std.testing.expectError(error.InvalidMacAddress, parse_mac("01-23:45-67:89:AB")); // Mixed separators
-    try std.testing.expectError(error.InvalidMacAddress, parse_mac("01::23:45:67:89:AB")); // Extra colon
-    try std.testing.expectError(error.InvalidMacAddress, parse_mac("")); // Empty string
-}
-
-/// Expects length 17 and separator either "-" or ":" (e.g. 01-23-45-AB-CD-EF)
-pub fn is_mac_valid(mac: []const u8) bool {
-    _ = parse_mac(mac) catch return false;
-    return true;
-}
-
-test "is_mac_valid" {
-    try std.testing.expectEqual(is_mac_valid("01:23:45:67:89:ab"), true);
-    try std.testing.expectEqual(is_mac_valid("01-23-45-67-89-ab"), true);
-    try std.testing.expectEqual(is_mac_valid("01:23:45:67:89"), false); // Too short
-    try std.testing.expectEqual(is_mac_valid("01:23:45:67:89:AB:CD"), false); // Too long
-    try std.testing.expectEqual(is_mac_valid("01:23:45:67:89:GG"), false); // Invalid hex
-    try std.testing.expectEqual(is_mac_valid("01-23:45-67-89:AB"), false); // Mixed separators
-    try std.testing.expectEqual(is_mac_valid("01::23:45:67:89:AB"), false); // Extra colon
-    try std.testing.expectEqual(is_mac_valid(""), false); // Empty string
-}
-
-pub fn generate_magic_packet(mac_bytes: [6]u8) [102]u8 {
+pub fn generateMagicPacket(mac_bytes: [6]u8) [102]u8 {
     var packet: [102]u8 = undefined;
     @memset(packet[0..6], 0xFF); // First 6 bytes are 0xFF
     for (0..16) |i| {
@@ -76,43 +15,55 @@ pub fn generate_magic_packet(mac_bytes: [6]u8) [102]u8 {
     return packet;
 }
 
-/// Broadcasts a magic packet to wake up a device with the specified MAC address.
-pub fn broadcast_magic_packet_ipv4(mac: []const u8, port: ?u16, broadcast: ?[]const u8, count: ?u8) !void {
+/// Send a magic packet to wake up a device with the specified MAC address.
+/// The broadcast address is expected as literal address:port, e.g. "255.255.255.255:9".
+pub fn broadcastMagicPacket(io: Io, mac: []const u8, broadcast: ?[]const u8, count: ?u8) !void {
     // Defaults
-    const actual_port = port orelse 9;
-    const actual_broadcast = try std.net.Address.parseIp(broadcast orelse "255.255.255.255", actual_port);
-    const actual_count = count orelse 3; // how man times the magic packet is sent
+    var actual_broadcast = try Io.net.IpAddress.parseLiteral(broadcast orelse "255.255.255.255:9");
+    if (actual_broadcast.getPort() == 0) {
+        log.warn("Provided broadcast address {f} has no port specified, defaulting to port 9.", .{actual_broadcast});
+        actual_broadcast.setPort(9);
+    }
+    const actual_count = count orelse 3;
 
-    const mac_bytes = parse_mac(mac) catch |err| {
-        std.log.err("Invalid MAC address: {}\n", .{err});
+    const eui48 = Eui48.fromLiteral(mac) catch |err| {
+        log.err("Invalid MAC address: {}", .{err});
         return err;
     };
-    const magic_packet = generate_magic_packet(mac_bytes);
+    const magic_packet = generateMagicPacket(eui48.bytes);
 
     // Create a UDP socket
-    const socket = try posix.socket(posix.AF.INET, posix.SOCK.DGRAM, posix.IPPROTO.UDP);
-    defer posix.close(socket);
-
-    // Enable socket broadcast (setting SO_BROADCAST to anything othen than empty string enables broadcast)
-    const option_value: u32 = 1;
-    posix.setsockopt(socket, posix.SOL.SOCKET, posix.SO.BROADCAST, std.mem.asBytes(&option_value)) catch |err| {
-        std.log.err("Failed to set socket option to enable broadcast: {}\n", .{err});
+    const any_addr = Io.net.IpAddress.parse("0.0.0.0", 0) catch |err| {
+        log.err("Failed to parse address: {}", .{err});
+        return error.InvalidAddress;
+    };
+    const socket = Io.net.IpAddress.bind(
+        &any_addr,
+        io,
+        .{
+            .mode = .dgram,
+            .protocol = .udp,
+            .allow_broadcast = true,
+        },
+    ) catch |err| {
+        log.err("Failed to bind UDP socket: {}", .{err});
         return err;
     };
+    defer socket.close(io);
 
     // Send the magic packet
     for (0..actual_count) |_| {
-        _ = posix.sendto(socket, &magic_packet, 0, &actual_broadcast.any, actual_broadcast.getOsSockLen()) catch |err| {
-            std.log.err("Failed to send to the provided address {f}.\n", .{actual_broadcast.in});
+        socket.send(io, &actual_broadcast, &magic_packet) catch |err| {
+            log.err("Failed to send to the provided address {f}.", .{actual_broadcast.ip4});
             return err;
         };
     }
 
-    std.log.info("Sent {d} magic packet to target MAC {s} via {f}/udp.\n", .{ actual_count, mac, actual_broadcast.in });
+    log.info("Sent {d} magic packet to target MAC {s} via {f}/udp.", .{ actual_count, mac, actual_broadcast.ip4 });
 }
 
 /// Checks if a sequence is a valid magic packet: 6 bytes of 0xFF followed by the MAC address bytes repeated 16 times.
-pub fn is_magic_packet(sequence: [102]u8) bool {
+pub fn isMagicPacket(sequence: [102]u8) bool {
     // Check if the first 6 bytes are all 0xFF
     if (std.mem.eql(u8, sequence[0..6], &[_]u8{ 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF }) == false) {
         return false;
@@ -127,8 +78,8 @@ pub fn is_magic_packet(sequence: [102]u8) bool {
     return true;
 }
 
-test "is_magic_packet (valid)" {
-    const valid_packet: [102]u8 = [_]u8{
+test isMagicPacket {
+    const valid: [102]u8 = [_]u8{
         0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
         0x01, 0x02, 0x03, 0x04, 0x05, 0x06,
         0x01, 0x02, 0x03, 0x04, 0x05, 0x06,
@@ -147,11 +98,9 @@ test "is_magic_packet (valid)" {
         0x01, 0x02, 0x03, 0x04, 0x05, 0x06,
         0x01, 0x02, 0x03, 0x04, 0x05, 0x06,
     };
-    try std.testing.expect(is_magic_packet(valid_packet));
-}
+    try testing.expect(isMagicPacket(valid));
 
-test "is_magic_packet (invalid - broken header)" {
-    const invalid_packet_broken_header: [102]u8 = [_]u8{
+    const broken_header: [102]u8 = [_]u8{
         0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xAA, // broken header
         0x01, 0x02, 0x03, 0x04, 0x05, 0x06,
         0x01, 0x02, 0x03, 0x04, 0x05, 0x06,
@@ -170,11 +119,9 @@ test "is_magic_packet (invalid - broken header)" {
         0x01, 0x02, 0x03, 0x04, 0x05, 0x06,
         0x01, 0x02, 0x03, 0x04, 0x05, 0x06,
     };
-    try std.testing.expect(!is_magic_packet(invalid_packet_broken_header));
-}
+    try testing.expect(!isMagicPacket(broken_header));
 
-test "is_magic_packet (invalid - broken repetition)" {
-    const invalid_packet_broken_repetition: [102]u8 = [_]u8{
+    const broken_repetition: [102]u8 = [_]u8{
         0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
         0x01, 0x02, 0x03, 0x04, 0x05, 0x06,
         0x01, 0x02, 0x03, 0x04, 0x05, 0x06,
@@ -193,49 +140,48 @@ test "is_magic_packet (invalid - broken repetition)" {
         0x01, 0x02, 0x03, 0x04, 0x05, 0x06,
         0x01, 0x02, 0x03, 0x04, 0x05, 0xFF, // broken repetition
     };
-    try std.testing.expect(!is_magic_packet(invalid_packet_broken_repetition));
+    try testing.expect(!isMagicPacket(broken_repetition));
 }
 
 /// Never returns. Listens for magic packets and relays them to the specified address and port.
-pub fn relay_begin(listen_addr: std.net.Address, relay_addr: std.net.Address) !void {
-    const socket = try posix.socket(posix.AF.INET, posix.SOCK.DGRAM, posix.IPPROTO.UDP);
-    defer posix.close(socket);
-
-    const option_value: u32 = 1;
-    try posix.setsockopt(socket, posix.SOL.SOCKET, posix.SO.BROADCAST, std.mem.asBytes(&option_value));
-
-    posix.bind(socket, &listen_addr.any, listen_addr.getOsSockLen()) catch |err| {
-        std.log.err("Failed to bind socket to {f}: {}\n", .{ listen_addr.in, err });
+pub fn relayBegin(io: Io, listen_addr: Io.net.IpAddress, relay_addr: Io.net.IpAddress) !void {
+    const socket = Io.net.IpAddress.bind(
+        &listen_addr,
+        io,
+        .{
+            .mode = .dgram,
+            .protocol = .udp,
+            .allow_broadcast = true,
+        },
+    ) catch |err| {
+        log.err("Failed to bind UDP socket to {f}: {}", .{ listen_addr.ip4, err });
         return err;
     };
+    defer socket.close(io);
 
+    log.info("Listening for WOL packets on {f}, relaying to {f}...", .{ listen_addr.ip4, relay_addr.ip4 });
     var buf: [102]u8 = undefined;
-
     while (true) {
-        std.Thread.sleep(1_000_000_000);
+        const incoming_message = socket.receive(io, &buf) catch continue;
 
-        std.log.info("Listening for WOL packets on {f}, relaying to {f}...\n", .{ listen_addr.in, relay_addr.in });
-
-        const received_bytes_count = posix.recv(socket, &buf, 0) catch |err| {
-            std.log.err("Failed to receive data: {}\n", .{err});
-            continue; // in case of recv error (e.g. error.MessageTooBig when size > 102 bytes), ignore and continue listening
-        };
-
-        if (received_bytes_count != 102) {
-            std.log.info("Received packet ignored: unexpected packet size of {d} bytes, expected 102 bytes.\n", .{received_bytes_count});
-            continue; // ignore packets that are not 102 bytes
-        }
-
-        if (!is_magic_packet(buf)) {
-            std.log.info("Received packet ignored: invalid WOL packet.\n", .{});
+        if (incoming_message.data.len != 102) {
+            log.warn("Received packet with invalid size of {d} bytes, expected 102 bytes.", .{incoming_message.data.len});
             continue;
         }
 
-        std.log.info("Received WOL packet on {f}.\nPacket data: {x}.\n\n", .{ listen_addr.in, buf[0..received_bytes_count] });
-        // Relay the received magic packet to the specified address and port
-        _ = posix.sendto(socket, &buf, 0, &relay_addr.any, relay_addr.getOsSockLen()) catch |err| {
-            std.log.err("Failed to relay to {f}.\n", .{relay_addr.in});
+        if (!isMagicPacket(buf)) {
+            log.warn("Received packet ignored: invalid WOL packet.", .{});
+            continue;
+        }
+
+        const mac: Eui48 = .{ .bytes = buf[6..12].* };
+        log.info("Received WOL packet for MAC {f} on {f}, relaying to {f}", .{ mac, listen_addr.ip4, relay_addr.ip4 });
+
+        _ = socket.send(io, &relay_addr, &buf) catch |err| {
+            log.err("Failed to relay packet to {f}: {}", .{ relay_addr.ip4, err });
             return err;
         };
+
+        try io.sleep(.fromMilliseconds(500), .real);
     }
 }

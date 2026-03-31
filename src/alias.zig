@@ -1,197 +1,175 @@
 const std = @import("std");
+const testing = std.testing;
+const process = std.process;
+const debug = std.debug;
+const log = std.log;
+const Allocator = std.mem.Allocator;
+const Io = std.Io;
 const ArrayList = std.ArrayList;
 
 pub const Alias = struct {
     name: []const u8,
     mac: []const u8,
     broadcast: []const u8,
-    port: u16,
     fqdn: []const u8,
-    description: []const u8,
 };
 
 /// Return the example alias list. Caller must free the memory after use.
-fn getExampleAliasList(allocator: std.mem.Allocator) ArrayList(Alias) {
-    var alias_list = ArrayList(Alias).initCapacity(allocator, 0) catch @panic("OutOfMemory");
+fn getExampleAliasList(allocator: Allocator) ArrayList(Alias) {
+    var alias_list = ArrayList(Alias).initCapacity(allocator, 0) catch |err| {
+        log.err("Error initializing alias list: {}", .{err});
+        process.exit(1);
+    };
 
     alias_list.append(allocator, Alias{
         .name = "alias-example-unreachable",
         .mac = "01-01-01-ab-ab-ab",
-        .broadcast = "255.255.255.255",
-        .port = 9,
+        .broadcast = "255.255.255.255:9",
         .fqdn = "alias-example.unreachable-by-ping",
-        .description = "Alias example. Works with WOL but cannot be pinged.",
     }) catch {
-        std.log.err("Error appending to alias list\n", .{});
-        std.posix.exit(1);
+        log.err("Error appending to alias list", .{});
+        process.exit(1);
     };
 
     alias_list.append(allocator, Alias{
         .name = "alias-example-localhost",
         .mac = "00-00-00-00-00-00",
-        .broadcast = "255.255.255.255",
-        .port = 9,
+        .broadcast = "255.255.255.255:9",
         .fqdn = "localhost",
-        .description = "Alias example. Can be pinged successfully when using the subcommand status. Does not support WOL.",
     }) catch {
-        std.log.err("Error appending to alias list\n", .{});
-        std.posix.exit(1);
+        log.err("Error appending to alias list", .{});
+        process.exit(1);
     };
 
     return alias_list;
 }
 
 /// Read the alias file in the same directory as the executable. Caller must free the memory after use.
-/// Allocates internally.
-pub fn readAliasFile(allocator: std.mem.Allocator) ArrayList(Alias) {
-    const file_path = getAliasFilePath(allocator);
+pub fn readAliasFile(allocator: Allocator, io: Io) ArrayList(Alias) {
+    const file_path = getAliasFilePath(allocator, io);
     defer allocator.free(file_path);
 
-    if (!aliasFileExists(allocator)) {
-        std.log.info("Alias list file does not exist, creating the default file...\n", .{});
+    if (!aliasFileExists(allocator, io)) {
+        log.info("Alias list file does not exist, creating the default file...", .{});
         const example_alias_list = getExampleAliasList(allocator);
-        writeAliasFile(allocator, example_alias_list);
+        writeAliasFile(allocator, io, example_alias_list.items);
         return example_alias_list;
     }
 
-    const file = std.fs.openFileAbsolute(file_path, .{ .mode = .read_only }) catch |err| {
-        std.log.err("Error opening alias file: {}\n", .{err});
-        std.posix.exit(1);
-    };
-    defer file.close();
-
-    const file_source = file.readToEndAlloc(allocator, 1024 * 1024) catch |err| {
-        std.log.err("Error reading alias file: {}\n", .{err});
-        std.posix.exit(1);
-    };
-    defer allocator.free(file_source);
-
-    // Allocate a new null-terminated slice
-    const file_source_nt = allocator.allocSentinel(u8, file_source.len, 0) catch |err| {
-        std.log.err("Error allocating memory for alias file: {}\n", .{err});
-        std.posix.exit(1);
-    };
-    defer allocator.free(file_source_nt);
-
-    @memcpy(file_source_nt[0..file_source.len], file_source);
-
-    // Zon parsing
-    const alias_list_slice = std.zon.parse.fromSlice([]Alias, allocator, file_source_nt, null, .{}) catch |err| {
-        std.log.err("Error parsing alias file: {}\n", .{err});
-        std.posix.exit(1);
+    const file_stats = Io.Dir.statFile(.cwd(), io, file_path, .{}) catch |err| {
+        log.err("Error getting alias file size: {}", .{err});
+        process.exit(1);
     };
 
-    // Create the alias list and fill with default items
-    var alias_list = ArrayList(Alias).initCapacity(allocator, alias_list_slice.len) catch |err| {
-        std.log.err("Error allocating memory for alias list: {}\n", .{err});
-        std.posix.exit(1);
+    const buffer_nt: [:0]u8 = allocator.allocSentinel(u8, file_stats.size, 0) catch |err| {
+        log.err("Error allocating memory for alias file: {}", .{err});
+        process.exit(1);
+    };
+    defer allocator.free(buffer_nt);
+
+    const slice_nt = Io.Dir.readFile(.cwd(), io, file_path, buffer_nt) catch |err| {
+        log.err("Error reading alias file: {}", .{err});
+        process.exit(1);
+    };
+    debug.assert(slice_nt.len == file_stats.size);
+
+    const alias_list_slice = std.zon.parse.fromSliceAlloc([]Alias, allocator, buffer_nt, null, .{}) catch |err| {
+        log.err("Error parsing alias file: {}", .{err});
+        process.exit(1);
     };
 
-    for (alias_list_slice) |item| {
-        alias_list.append(allocator, item) catch |err| {
-            std.log.err("Error appending to alias list: {}\n", .{err});
-            std.posix.exit(1);
-        };
-    }
-
-    return alias_list;
+    return ArrayList(Alias).fromOwnedSlice(alias_list_slice);
 }
 
-test "readAliasFile" {
-    const page_allocator = std.heap.page_allocator;
+test readAliasFile {
+    const allocator = testing.allocator;
+    const io = testing.io;
 
-    var alias_list = readAliasFile(page_allocator);
-    defer alias_list.deinit(page_allocator);
+    var alias_list = readAliasFile(allocator, io);
+    defer alias_list.deinit(allocator);
 
-    try std.testing.expect(alias_list.items.len >= 1);
-
-    std.log.info("First alias: {s}, {s}, {s}\n", .{ alias_list.items[0].name, alias_list.items[0].mac, alias_list.items[0].description });
-
-    try std.testing.expect(std.mem.eql(u8, alias_list.items[0].name, "alias-example-unreachable"));
-    try std.testing.expect(std.mem.eql(u8, alias_list.items[0].mac, "01-01-01-ab-ab-ab"));
+    try testing.expect(std.mem.eql(u8, alias_list.items[0].name, "alias-example-unreachable"));
+    try testing.expect(std.mem.eql(u8, alias_list.items[0].mac, "01-01-01-ab-ab-ab"));
 }
 
 /// Write the alias file in the same directory as the executable. Overwrites if it already exists.
-pub fn writeAliasFile(allocator: std.mem.Allocator, alias_list: ArrayList(Alias)) void {
-    const file_path = getAliasFilePath(allocator);
+pub fn writeAliasFile(allocator: Allocator, io: Io, alias_slice: []Alias) void {
+    const file_path = getAliasFilePath(allocator, io);
     defer allocator.free(file_path);
 
-    const file = std.fs.createFileAbsolute(file_path, .{}) catch |err| {
-        std.log.err("Error creating alias file: {}\n", .{err});
-        std.posix.exit(1);
+    const file = Io.Dir.createFileAbsolute(io, file_path, .{}) catch |err| {
+        log.err("Error creating alias file: {}", .{err});
+        process.exit(1);
     };
-    defer file.close();
+    defer file.close(io);
 
     var buf: [1024]u8 = undefined;
-    var writer = std.fs.File.writer(file, &buf);
+    var writer = Io.File.Writer.init(file, io, &buf);
     const writer_interface = &writer.interface;
-    defer writer_interface.flush() catch @panic("stdout flush failed");
+    defer writer_interface.flush() catch |err| {
+        log.err("Error flushing alias file: {}", .{err});
+        process.exit(1);
+    };
 
-    std.zon.stringify.serialize(alias_list.items, .{}, writer_interface) catch |err| {
-        std.log.err("Error serializing alias file: {}\n", .{err});
-        std.posix.exit(1);
+    std.zon.stringify.serialize(alias_slice, .{}, writer_interface) catch |err| {
+        log.err("Error serializing alias file: {}", .{err});
+        process.exit(1);
     };
 }
 
-test "writeAliasFile" {
-    var da = std.heap.DebugAllocator(.{}){};
-    defer _ = da.deinit();
-    const gpa = da.allocator();
+test writeAliasFile {
+    const allocator = testing.allocator;
+    const io = testing.io;
 
-    var alias_list = getExampleAliasList(gpa);
-    defer alias_list.deinit(gpa);
-
-    writeAliasFile(gpa, alias_list);
+    var alias_list = getExampleAliasList(allocator);
+    defer alias_list.deinit(allocator);
+    writeAliasFile(allocator, io, alias_list.items);
 }
 
 /// Computes the absolute path to the alias file in the same directory as the executable.
 /// Caller must free the memory after use.
-pub fn getAliasFilePath(allocator: std.mem.Allocator) []u8 {
-    var exe_dir_path_buffer: [std.fs.max_path_bytes]u8 = undefined;
-    const exe_dir_path = std.fs.selfExeDirPath(&exe_dir_path_buffer) catch |err| {
-        std.log.err("Error getting self executable directory path: {}\n", .{err});
-        std.posix.exit(1);
+pub fn getAliasFilePath(allocator: Allocator, io: Io) []u8 {
+    const exe_dir_path = process.executableDirPathAlloc(io, allocator) catch |err| {
+        log.err("Error getting self executable directory path: {}", .{err});
+        process.exit(1);
     };
+    defer allocator.free(exe_dir_path);
 
     const file_path = std.fs.path.join(allocator, &[_][]const u8{
         exe_dir_path,
         "alias.zon",
     }) catch |err| {
-        std.log.err("Error joining paths: {}\n", .{err});
-        std.posix.exit(1);
+        log.err("Error joining paths: {}", .{err});
+        process.exit(1);
     };
 
     return file_path;
 }
 
-test "getAliasFilePath" {
-    var da = std.heap.DebugAllocator(.{}){};
-    defer _ = da.deinit();
-    const gpa = da.allocator();
+test getAliasFilePath {
+    const allocator = testing.allocator;
+    const io = testing.io;
 
-    const file_path = getAliasFilePath(gpa);
-    defer gpa.free(file_path);
-
-    std.log.info("Alias file path: {s}\n", .{file_path});
+    const file_path = getAliasFilePath(allocator, io);
+    defer allocator.free(file_path);
 }
 
 /// Check if the zon alias file exists in the same directory as the executable.
 /// Internally allocates and frees to compute the path.
-pub fn aliasFileExists(allocator: std.mem.Allocator) bool {
-    const file_path = getAliasFilePath(allocator);
+pub fn aliasFileExists(allocator: Allocator, io: Io) bool {
+    const file_path = getAliasFilePath(allocator, io);
     defer allocator.free(file_path);
 
-    _ = std.fs.accessAbsolute(file_path, .{ .mode = .read_only }) catch {
+    _ = Io.Dir.accessAbsolute(io, file_path, .{ .read = true }) catch {
         return false;
     };
 
     return true;
 }
 
-test "aliasFileExists" {
-    var da = std.heap.DebugAllocator(.{}){};
-    defer _ = da.deinit();
-    const gpa = da.allocator();
+test aliasFileExists {
+    const allocator = testing.allocator;
+    const io = testing.io;
 
-    _ = aliasFileExists(gpa);
+    _ = aliasFileExists(allocator, io);
 }

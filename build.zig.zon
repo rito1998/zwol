@@ -1,14 +1,18 @@
 .{
-    .name = .zigwol,
-    .fingerprint = 0xde77714c68dfba75,
-    .version = "0.6.6",
+    .name = .wol,
+    .fingerprint = 0x89efddc744af097,
+    .version = "0.7.0",
     .dependencies = .{
         .clap = .{
-            .url = "git+https://github.com/Hejsil/zig-clap#5289e0753cd274d65344bef1c114284c633536ea",
-            .hash = "clap-0.11.0-oBajB-HnAQDPCKYzwF7rO3qDFwRcD39Q0DALlTSz5H7e",
+            .url = "git+https://github.com/Hejsil/zig-clap#fc1e5cc3f6d9d3001112385ee6256d694e959d2f",
+            .hash = "clap-0.11.0-oBajB7foAQC3Iyn4IVCkUdYaOVVng5IZkSncySTjNig1",
+        },
+        .eui = .{
+            .url = "git+https://github.com/rito1998/zig-eui#74b86720ca9409aeb2cb4fd0bf8baf3690cd44cc",
+            .hash = "eui-0.1.0--PejydknAABOPVdr_NLff_ogB87HN9-ikvu4lFnqHERR",
         },
     },
-    .minimum_zig_version = "0.15.2",
+    .minimum_zig_version = "0.16.0-dev.3041+3dc5f1398",
     .paths = .{
         "build.zig",
         "build.zig.zon",

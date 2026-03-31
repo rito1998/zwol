@@ -1,14 +1,21 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const build_zig_zon = @import("build_zig_zon");
-const clap = @import("clap"); // third-party lib for cmd line args parsing
-const wol = @import("wol"); // local module
-const alias = @import("alias.zig"); // local src file
+const clap = @import("clap");
+const wol = @import("wol.zig");
+const alias = @import("alias.zig");
 const ping = @import("ping.zig");
+const Eui48 = @import("eui").Eui48;
+
+const debug = std.debug;
+const Allocator = std.mem.Allocator;
+const Io = std.Io;
+const process = std.process;
+const log = std.log;
 
 const SubCommands = enum {
     wake,
-    status,
+    ping,
     alias,
     remove,
     list,
@@ -20,62 +27,64 @@ const main_parsers = .{
     .command = clap.parsers.enumeration(SubCommands),
 };
 const main_params = clap.parseParamsComptime(
-    \\-h, --help  Display this help and exit.
+    \\-h, --help   Display this help and exit.
     \\<command>
     \\
 );
 const MainArgs = clap.ResultEx(clap.Help, &main_params, main_parsers);
 
-pub fn main() !void {
-    // var da = std.heap.DebugAllocator(.{
-    //     .thread_safe = true,
-    //     .retain_metadata = true,
-    // }){};
-    // defer _ = da.deinit();
-    // const gpa = da.allocator();
-    const gpa = std.heap.page_allocator;
+pub fn main(init: process.Init) !void {
+    const allocator = init.arena.allocator();
+    const io = init.io;
 
-    var iter = try std.process.ArgIterator.initWithAllocator(gpa);
+    var iter = try init.minimal.args.iterateAllocator(allocator);
     defer iter.deinit();
-
-    _ = iter.next();
+    _ = iter.next(); // skip program name
 
     var diag = clap.Diagnostic{};
     var res = clap.parseEx(clap.Help, &main_params, main_parsers, &iter, .{
         .diagnostic = &diag,
-        .allocator = gpa,
+        .allocator = allocator,
         .terminating_positional = 0,
     }) catch |err| {
-        try diag.reportToFile(.stderr(), err);
-        return subCommandHelp();
+        try diag.reportToFile(io, .stderr(), err);
+        return subCommandHelp(io);
     };
     defer res.deinit();
 
     if (res.positionals.len == 0) {
-        return subCommandHelp();
+        return subCommandHelp(io);
     }
 
-    const subcommand = res.positionals[0] orelse return subCommandHelp();
+    // Set codepage to display emojis correctly on Windows
+    if (builtin.target.os.tag == .windows) {
+        var setcp = std.os.windows.CONSOLE.USER_IO.SET_CP(.Output, 65001);
+        const ntstatus = try setcp.operate(io, null);
+        if (ntstatus != .SUCCESS) {
+            log.warn("Failed to set codepage 65001: characters may not display correctly.", .{});
+        }
+    }
+
+    const subcommand = res.positionals[0] orelse return subCommandHelp(io);
     switch (subcommand) {
-        .wake => try subCommandWake(gpa, &iter, res),
-        .status => try subCommandStatus(gpa, &iter, res),
-        .alias => try subCommandAlias(gpa, &iter, res),
-        .remove => try subCommandRemove(gpa, &iter, res),
-        .list => try subCommandList(gpa, &iter, res),
-        .relay => try subCommandRelay(gpa, &iter, res),
-        .version => try subCommandVersion(),
-        .help => try subCommandHelp(),
+        .wake => try subCommandWake(allocator, io, &iter, res),
+        .ping => try subCommandPing(allocator, io, &iter, res),
+        .alias => try subCommandAlias(allocator, io, &iter, res),
+        .remove => try subCommandRemove(allocator, io, &iter, res),
+        .list => try subCommandList(allocator, io, &iter, res),
+        .relay => try subCommandRelay(allocator, io, &iter, res),
+        .version => try subCommandVersion(io),
+        .help => try subCommandHelp(io),
     }
 }
 
-fn subCommandWake(allocator: std.mem.Allocator, iter: *std.process.ArgIterator, main_args: MainArgs) !void {
+fn subCommandWake(allocator: Allocator, io: Io, iter: *process.Args.Iterator, main_args: MainArgs) !void {
     _ = main_args;
 
     const params = comptime clap.parseParamsComptime(
         \\<str>               MAC of the device to wake up, or an existing alias name.
         \\--help              Display this help and exit.
-        \\--broadcast <str>   IPv4, defaults to 255.255.255.255, setting this may be required in some scenarios.
-        \\--port <u16>        UDP port, default 9. Generally irrelevant since wake-on-lan works with OSI layer 2 (Data Link).
+        \\--broadcast <str>   IpAddress, defaults to 255.255.255.255:9, setting this may be required in some scenarios.
         \\--all               Wake up all devices in the alias list.
     );
 
@@ -84,54 +93,56 @@ fn subCommandWake(allocator: std.mem.Allocator, iter: *std.process.ArgIterator, 
         .diagnostic = &diag,
         .allocator = allocator,
     }) catch |err| {
-        try diag.reportToFile(.stderr(), err);
-        return err;
+        try diag.reportToFile(io, .stderr(), err);
+        process.exit(1);
     };
     defer res.deinit();
 
     const help_message = "Provide a MAC or an alias name. Usage: zig-wol wake <MAC or ALIAS> [options]\n";
 
     if (res.args.help != 0)
-        return std.debug.print("{s}", .{help_message});
+        return try Io.File.stdout().writeStreamingAll(io, help_message);
 
     // if --all is provided, wake up all devices in the alias list
     if (res.args.all != 0) {
-        var alias_list = alias.readAliasFile(allocator);
+        var alias_list = alias.readAliasFile(allocator, io);
         defer alias_list.deinit(allocator);
 
         for (alias_list.items) |item| {
-            try wol.broadcast_magic_packet_ipv4(item.mac, item.port, item.broadcast, null);
-            std.Thread.sleep(100 * std.time.ns_per_ms); // sleep 100ms
+            try wol.broadcastMagicPacket(io, item.mac, item.broadcast, null);
+            try io.sleep(.fromMilliseconds(100), .real); // sleep between packets
         }
         return;
     }
 
-    const mac = res.positionals[0] orelse return std.debug.print("{s}", .{help_message});
+    const mac = res.positionals[0] orelse return log.err("{s}", .{help_message});
 
-    if (wol.is_mac_valid(mac)) {
-        return try wol.broadcast_magic_packet_ipv4(mac, res.args.port, res.args.broadcast, null);
+    const eui48 = Eui48.fromLiteral(mac);
+
+    if (eui48 != Eui48.Error.InvalidLiteral) {
+        return try wol.broadcastMagicPacket(io, mac, res.args.broadcast, null);
     } else {
-        var alias_list = alias.readAliasFile(allocator);
+        var alias_list = alias.readAliasFile(allocator, io);
         defer alias_list.deinit(allocator);
 
         for (alias_list.items) |item| {
             if (item.name.len > 0 and item.name.len == mac.len) {
                 if (std.mem.eql(u8, item.name, mac)) {
-                    return try wol.broadcast_magic_packet_ipv4(item.mac, item.port, item.broadcast, null);
+                    return try wol.broadcastMagicPacket(io, item.mac, item.broadcast, null);
                 }
             }
         }
 
-        std.debug.print("Provided argument {s} is neither a valid MAC nor an existing alias name.\n", .{mac});
+        log.err("Provided argument {s} is neither a valid MAC nor an existing alias name.", .{mac});
     }
 }
 
-fn subCommandStatus(allocator: std.mem.Allocator, iter: *std.process.ArgIterator, main_args: MainArgs) !void {
+fn subCommandPing(allocator: Allocator, io: Io, iter: *process.Args.Iterator, main_args: MainArgs) !void {
     _ = main_args;
 
     const params = comptime clap.parseParamsComptime(
-        \\--live            Ping continuously.
-        \\--help            Display this help and exit.
+        \\--forever   Ping continuously.
+        \\--help      Display this help and exit.
     );
 
     var diag = clap.Diagnostic{};
@@ -139,122 +150,111 @@ fn subCommandStatus(allocator: std.mem.Allocator, iter: *std.process.ArgIterator
         .diagnostic = &diag,
         .allocator = allocator,
     }) catch |err| {
-        try diag.reportToFile(.stderr(), err);
-        return err;
+        try diag.reportToFile(io, .stderr(), err);
+        process.exit(1);
     };
     defer res.deinit();
 
     const help_message =
-        \\Ping all aliases to check their status. Usage: zig-wol status [--live] [--help]
+        \\Ping all aliases. Usage: zig-wol ping [--forever] [--help]
         \\Make sure a FQDN/IP is set accordingly for each alias.
     ;
 
     if (res.args.help != 0)
-        return std.debug.print("{s}", .{help_message});
+        return try Io.File.stdout().writeStreamingAll(io, help_message);
 
-    const is_status_live = res.args.live != 0;
+    const forever = res.args.forever != 0;
 
-    var alias_list = alias.readAliasFile(allocator);
+    var alias_list = alias.readAliasFile(allocator, io);
     defer alias_list.deinit(allocator);
 
-    var threads = try allocator.alloc(std.Thread, alias_list.items.len);
-    defer allocator.free(threads);
-
-    var is_alive_array = try allocator.alloc(bool, alias_list.items.len);
-    for (is_alive_array) |*item| {
+    var is_alive = try allocator.alloc(bool, alias_list.items.len);
+    for (is_alive) |*item| {
         item.* = false;
     }
-    defer allocator.free(is_alive_array);
+    defer allocator.free(is_alive);
 
-    var mutex = std.Thread.Mutex{};
+    var stdout_buf: [64]u8 = undefined;
+    var stdout_writer = Io.File.stdout().writer(io, &stdout_buf);
+    var stdout = &stdout_writer.interface;
+
+    // name resolution
+    var group = Io.Group.init;
+
+    var resolved_addresses = try allocator.alloc(?Io.net.IpAddress, alias_list.items.len);
+    defer allocator.free(resolved_addresses);
 
     for (alias_list.items, 0..) |item, i| {
-        threads[i] = try std.Thread.spawn(.{}, ping.ping_with_os_command_multithread, .{
-            allocator,
-            item.fqdn,
-            is_status_live,
-            &mutex,
-            &is_alive_array[i],
-        });
-    }
-
-    if (is_status_live) {
-        // in live mode detach threads so they can run independently forever
-        for (threads) |thread| {
-            _ = thread.detach();
+        if (item.fqdn.len == 0) {
+            continue;
         }
-    } else {
-        // in non-live mode ("single shot ping") wait for all threads to finish.
-        // a join here is necessary otherwise the first (and only) ping to all machines may not be completed when we print the status and exit
-        for (threads) |thread| {
-            _ = thread.join();
-        }
+        group.async(
+            io,
+            ping.hostnameLookup,
+            .{ io, item.fqdn, &resolved_addresses[i] },
+        );
     }
+    try group.await(io);
 
-    // Try using unicode characters for status indication
-    var is_unicode_supported: bool = true;
-    // Green circle: 🟢 (U+1F7E2)
-    // Red circle: 🔴 (U+1F534)
-    const status_indicator_online_unicode = "\u{1F7E2}";
-    const status_indicator_offline_unicode = "\u{1F534}";
-    // if not supported fall back to text with ANSI colors
-    const ansi_green = "\x1b[32m";
-    const ansi_red = "\x1b[31m";
-    const ansi_reset = "\x1b[0m";
-    const status_indicator_online_ansi = ansi_green ++ "ONLINE " ++ ansi_reset;
-    const status_indicator_offline_ansi = ansi_red ++ "OFFLINE" ++ ansi_reset;
-
-    // To use UNICODE on windows we need to set the console code page to UTF-8 (id 65001)
-    // see https://learn.microsoft.com/en-us/windows/win32/intl/code-page-identifiers
-    if (builtin.target.os.tag == .windows) {
-        const windows_utf8_code_page = 65001;
-        const is_set_cp_ok = std.os.windows.kernel32.SetConsoleOutputCP(windows_utf8_code_page);
-        const new_cp = std.os.windows.kernel32.GetConsoleOutputCP();
-        is_unicode_supported = is_set_cp_ok != 0 and new_cp == windows_utf8_code_page;
-    }
-
-    // Finally select the status indicators based on unicode support
-    const status_indicator_online = if (is_unicode_supported) status_indicator_online_unicode else status_indicator_online_ansi;
-    const status_indicator_offline = if (is_unicode_supported) status_indicator_offline_unicode else status_indicator_offline_ansi;
-
+    //try stdout.print("\u{1B}[?25l", .{}); // hide cursor
     var idx: u64 = 0;
     while (true) {
-        // reset the cursor to the top left before reprinting all lines
-        if (res.args.live != 0 and idx != 0) {
-            std.debug.print("\u{1B}[{d}A\r", .{alias_list.items.len});
-        }
-
-        // while accessing the results array to print the status, lock the mutex
-        mutex.lock();
-        for (alias_list.items, 0..) |item, i| {
-            if (is_alive_array[i]) {
-                std.debug.print("{s}  {s}\n", .{ status_indicator_online, item.name });
-            } else {
-                std.debug.print("{s}  {s}\n", .{ status_indicator_offline, item.name });
+        // launch async pings and await all futures
+        for (resolved_addresses, 0..) |address, i| {
+            if (address) |addr| {
+                group.async(
+                    io,
+                    ping.systemPingIpAddress,
+                    .{ allocator, io, addr, &is_alive[i] },
+                );
             }
         }
-        mutex.unlock();
+        try group.await(io);
 
-        if (is_status_live) {
-            // sleep 1 second before printing the status again to console
-            std.Thread.sleep(1 * std.time.ns_per_s);
-        } else {
-            break;
+        // reset the cursor to the top left before reprinting all lines
+        if (forever and idx != 0) {
+            try stdout.print("\u{1B}[{d}A\r", .{alias_list.items.len});
         }
+
+        for (alias_list.items, 0..) |item, i| {
+            if (is_alive[i]) {
+                try stdout.print("{s}  {s}\n", .{ "\u{1F7E2}", item.name }); // Green circle: 🟢 (U+1F7E2)
+            } else {
+                try stdout.print("{s}  {s}\n", .{ "\u{1F534}", item.name }); // Red circle: 🔴 (U+1F534)
+            }
+        }
+        try stdout.flush();
+
+        if (forever) {
+            // print running dots animation while waiting between pings
+            try io.sleep(.fromMilliseconds(500), .real);
+            try stdout.print(".", .{});
+            try stdout.flush();
+            try io.sleep(.fromMilliseconds(500), .real);
+            try stdout.print(".", .{});
+            try stdout.flush();
+            try io.sleep(.fromMilliseconds(500), .real);
+            try stdout.print(".", .{});
+            try stdout.flush();
+            try io.sleep(.fromMilliseconds(500), .real);
+            try stdout.print("\u{1B}[3D   \u{1B}[3D", .{}); // delete the 3 dots
+            try stdout.flush();
+        } else break;
         idx += 1;
     }
+
+    //try stdout.print("\u{1B}[?25h", .{}); // show cursor
+    //try stdout.flush();
 }
 
-fn subCommandAlias(allocator: std.mem.Allocator, iter: *std.process.ArgIterator, main_args: MainArgs) !void {
+fn subCommandAlias(allocator: Allocator, io: Io, iter: *process.Args.Iterator, main_args: MainArgs) !void {
     _ = main_args;
 
     const params = comptime clap.parseParamsComptime(
         \\<str>                 Name for the new alias.
         \\<str>                 MAC for the new alias.
-        \\--broadcast <str>     IPv4, defaults to 255.255.255.255, setting this may be required in some scenarios.
-        \\--port <u16>          UDP port, default 9. Generally irrelevant since wake-on-lan works with OSI layer 2 (Data Link).
-        \\--fqdn <str>          Fully Qualified Domain Name or IP address. Required to ping for displaying the status.
-        \\--description <str>   Description for the new alias.
+        \\--broadcast <str>     IpAddress, defaults to 255.255.255.255:9, setting this may be necessary when there are multiple network interfaces.
+        \\--fqdn <str>          Fully Qualified Domain Name or IP address. Required to ping for displaying the ping.
         \\-h, --help
     );
 
@@ -263,30 +263,33 @@ fn subCommandAlias(allocator: std.mem.Allocator, iter: *std.process.ArgIterator,
         .diagnostic = &diag,
         .allocator = allocator,
     }) catch |err| {
-        try diag.reportToFile(.stderr(), err);
-        return err;
+        try diag.reportToFile(io, .stderr(), err);
+        process.exit(1);
     };
     defer res.deinit();
 
-    const name = res.positionals[0] orelse return std.debug.print("Provide name and MAC for the new alias. Usage: zig-wol alias <NAME> <MAC>\n", .{});
-    const mac = res.positionals[1] orelse return std.debug.print("Provide a MAC. Usage: zig-wol alias <NAME> <MAC>\n", .{});
-    const broadcast = res.args.broadcast orelse "255.255.255.255";
-    const port = res.args.port orelse 9;
-    const fqdn = res.args.fqdn orelse "";
-    const description = res.args.description orelse "";
-
-    _ = wol.parse_mac(mac) catch |err| {
-        return std.debug.print("Invalid MAC: {}\n", .{err});
+    const name = res.positionals[0] orelse return log.err("Provide name and MAC for the new alias. Usage: zig-wol alias <NAME> <MAC>", .{});
+    const mac = res.positionals[1] orelse return log.err("Provide a MAC. Usage: zig-wol alias <NAME> <MAC>", .{});
+    _ = Eui48.fromLiteral(mac) catch |err| {
+        return log.err("Invalid MAC: {}", .{err});
     };
+    const broadcast = res.args.broadcast orelse "255.255.255.255:9";
+    const broadcast_addr = Io.net.IpAddress.parseLiteral(broadcast) catch |err| {
+        return log.err("Invalid broadcast: {}. Must be in the form address:port, e.g. 255.255.255.255:9.", .{err});
+    };
+    if (broadcast_addr.getPort() == 0) {
+        return log.err("Broadcast must include a port, e.g. 255.255.255.255:9.", .{});
+    }
+    const fqdn = res.args.fqdn orelse "";
 
     // get config from file, add alias and save config to file
-    var alias_list = alias.readAliasFile(allocator);
+    var alias_list = alias.readAliasFile(allocator, io);
     defer alias_list.deinit(allocator);
 
     // check if alias already exists
     for (alias_list.items) |item| {
         if (std.mem.eql(u8, item.name, name)) {
-            return std.debug.print("Failed to add alias: name already exists.", .{});
+            return log.err("Failed to add alias: name already exists.", .{});
         }
     }
 
@@ -294,18 +297,16 @@ fn subCommandAlias(allocator: std.mem.Allocator, iter: *std.process.ArgIterator,
         .name = name,
         .mac = mac,
         .broadcast = broadcast,
-        .port = port,
         .fqdn = fqdn,
-        .description = description,
     }) catch |err| {
-        return std.debug.print("Failed to add alias: {}\n", .{err});
+        return log.err("Failed to add alias: {}", .{err});
     };
-    alias.writeAliasFile(allocator, alias_list);
+    alias.writeAliasFile(allocator, io, alias_list.items);
 
-    std.debug.print("Alias added.\n", .{});
+    log.info("Alias added.", .{});
 }
 
-fn subCommandRemove(allocator: std.mem.Allocator, iter: *std.process.ArgIterator, main_args: MainArgs) !void {
+fn subCommandRemove(allocator: Allocator, io: Io, iter: *process.Args.Iterator, main_args: MainArgs) !void {
     _ = main_args;
 
     const params = comptime clap.parseParamsComptime(
@@ -319,8 +320,8 @@ fn subCommandRemove(allocator: std.mem.Allocator, iter: *std.process.ArgIterator
         .diagnostic = &diag,
         .allocator = allocator,
     }) catch |err| {
-        try diag.reportToFile(.stderr(), err);
-        return err;
+        try diag.reportToFile(io, .stderr(), err);
+        process.exit(1);
     };
     defer res.deinit();
 
@@ -328,39 +329,44 @@ fn subCommandRemove(allocator: std.mem.Allocator, iter: *std.process.ArgIterator
 
     // if --all is provided, remove all aliases
     if (res.args.all != 0) {
-        var alias_list = alias.readAliasFile(allocator);
+        var alias_list = alias.readAliasFile(allocator, io);
         const alias_count = alias_list.items.len;
         defer alias_list.deinit(allocator);
 
         alias_list.clearAndFree(allocator);
-        alias.writeAliasFile(allocator, alias_list);
-        std.debug.print("Removed {d} aliases.\n", .{alias_count});
+        alias.writeAliasFile(allocator, io, alias_list.items);
+        log.info("Removed {d} aliases.", .{alias_count});
         return;
     }
 
+    const help_message =
+        \\Provide an alias name to remove. Usage: zig-wol remove <NAME>
+        \\To remove all aliases: zig-wol remove --all
+    ;
+
+    if (res.args.help != 0)
+        return try Io.File.stdout().writeStreamingAll(io, help_message);
+
     // if name len is 0 or --help is provided, print help message
-    if (name.len == 0 or res.args.help != 0) {
-        std.debug.print("Provide an alias name to remove. Usage: zig-wol remove <NAME>\n", .{});
-        return std.debug.print("To remove all aliases: zig-wol remove --all\n", .{});
+    if (name.len == 0) {
+        return log.err("Provide an alias name.", .{});
     }
 
     // finally, if a name is provided, remove the alias
-
-    var alias_list = alias.readAliasFile(allocator);
+    var alias_list = alias.readAliasFile(allocator, io);
     defer alias_list.deinit(allocator);
 
     for (alias_list.items, 0..) |item, idx| {
         if (std.mem.eql(u8, item.name, name)) {
             _ = alias_list.orderedRemove(idx);
-            alias.writeAliasFile(allocator, alias_list);
-            std.debug.print("Alias removed.\n", .{});
-            return;
+            alias.writeAliasFile(allocator, io, alias_list.items);
+            return log.info("Alias removed.", .{});
         }
     }
-    std.debug.print("Alias not found.\n", .{});
+    log.err("Alias not found.", .{});
 }
 
-fn subCommandList(allocator: std.mem.Allocator, iter: *std.process.ArgIterator, main_args: MainArgs) !void {
+fn subCommandList(allocator: Allocator, io: Io, iter: *process.Args.Iterator, main_args: MainArgs) !void {
     _ = main_args;
 
     const params = comptime clap.parseParamsComptime(
@@ -372,35 +378,37 @@ fn subCommandList(allocator: std.mem.Allocator, iter: *std.process.ArgIterator, 
         .diagnostic = &diag,
         .allocator = allocator,
     }) catch |err| {
-        std.debug.print("{}", .{err});
-        return err;
+        try diag.reportToFile(io, .stderr(), err);
+        process.exit(1);
     };
     defer res.deinit();
 
-    var alias_list = alias.readAliasFile(allocator);
+    var alias_list = alias.readAliasFile(allocator, io);
     defer alias_list.deinit(allocator);
 
+    var buf: [64]u8 = undefined;
+    var stdout = Io.File.stdout().writer(io, &buf);
+    defer stdout.interface.flush() catch |err| {
+        log.err("Failed to flush stdout: {}", .{err});
+    };
+
     for (alias_list.items) |item| {
-        std.debug.print("Name: {s}\nMAC: {s}\nBroadcast: {s}\nPort: {d}\nFQDN: {s}\nDescription: {s}\n\n", .{
+        try stdout.interface.print("Name: {s}\nMAC: {s}\nBroadcast: {s}\nFQDN: {s}\n\n", .{
             item.name,
             item.mac,
             item.broadcast,
-            item.port,
             item.fqdn,
-            item.description,
         });
     }
 }
 
-fn subCommandRelay(allocator: std.mem.Allocator, iter: *std.process.ArgIterator, main_args: MainArgs) !void {
+fn subCommandRelay(allocator: Allocator, io: Io, iter: *process.Args.Iterator, main_args: MainArgs) !void {
     _ = main_args;
 
     const params = comptime clap.parseParamsComptime(
-        \\--help                  Display this help and exit.
-        \\--listen_address <str>  The address to listen on for wake-on-lan packets, for example coming from a router.
-        \\--listen_port <u16>     Default 9, the port to listen on for wake-on-lan packets.
-        \\--relay_address <str>   The address to relay the packets to, normally the subnet broadcast e.g. 192.168.1.255.
-        \\--relay_port <u16>      Default 9, generally irrelevant since wake-on-lan works with OSI layer 2 (Data Link).
+        \\--help   Display this help and exit.
+        \\<str>    IpAddress to listen on, in format host:port, e.g. 192.168.0.10:9999.
+        \\<str>    IpAddress to relay to, in format host:port, normally the subnet broadcast, e.g. 192.168.0.255:9.
     );
 
     var diag = clap.Diagnostic{};
@@ -408,63 +416,62 @@ fn subCommandRelay(allocator: std.mem.Allocator, iter: *std.process.ArgIterator,
         .diagnostic = &diag,
         .allocator = allocator,
     }) catch |err| {
-        try diag.reportToFile(.stderr(), err);
-        return err;
+        try diag.reportToFile(io, .stderr(), err);
+        process.exit(1);
     };
     defer res.deinit();
 
     const help_message =
-        \\Relay mode: Listen for Wake-on-LAN packets and forward them to another address.
-        \\Usage: zig-wol relay --listen_address <ADDR> --relay_address <ADDR> [--listen_port <PORT>] [--relay_port <PORT>] [--help]
+        \\Relay mode: listen for Wake-on-LAN packets and forward them.
+        \\Usage: zig-wol relay <LISTEN_ADDR> <RELAY_ADDR> [--help]
         \\
         \\Options:
-        \\  --listen_address <ADDR>   The address to listen on for incoming WOL packets (required).
-        \\  --listen_port <PORT>      The port to listen on (default: 9).
-        \\  --relay_address <ADDR>    The address to relay WOL packets to (required, usually a broadcast address).
-        \\  --relay_port <PORT>       The port to relay packets to (default: 9).
-        \\  --help                    Display this help and exit.
+        \\  --help            Display this help and exit.
         \\
         \\Example:
-        \\  zig-wol relay --listen_address 192.168.0.10 --listen_port 9999 --relay_address 192.168.0.255 --relay_port 9
+        \\  zig-wol relay 192.168.0.10:9999 192.168.0.255:9
         \\
     ;
 
     if (res.args.help != 0)
-        return std.debug.print("{s}", .{help_message});
+        return debug.print("{s}", .{help_message});
 
-    const listen_addr = std.net.Address.resolveIp(res.args.listen_address orelse {
-        std.debug.print("A value for the parameter --listen_address must be specified.\n\n", .{});
-        return std.debug.print("{s}", .{help_message});
-    }, res.args.listen_port orelse 9) catch |err| {
-        std.debug.print("Invalid listen address: {}\n\n", .{err});
-        return std.debug.print("{s}", .{help_message});
+    const listen_literal = res.positionals[0] orelse {
+        log.err("Provide a listen address.", .{});
+        return debug.print("{s}", .{help_message});
+    };
+    const relay_literal = res.positionals[1] orelse {
+        log.err("Provide a relay address.", .{});
+        return debug.print("{s}", .{help_message});
     };
 
-    const relay_addr = std.net.Address.resolveIp(res.args.relay_address orelse {
-        std.debug.print("A value for the parameter --relay_address must be specified.\n\n", .{});
-        return std.debug.print("{s}", .{help_message});
-    }, res.args.relay_port orelse 9) catch |err| {
-        std.debug.print("Invalid relay address: {}\n\n", .{err});
-        return std.debug.print("{s}", .{help_message});
+    const listen = Io.net.IpAddress.parseLiteral(listen_literal) catch |err| {
+        log.err("Invalid listen address: {}", .{err});
+        return debug.print("{s}", .{help_message});
+    };
+    const relay = Io.net.IpAddress.parseLiteral(relay_literal) catch |err| {
+        log.err("Invalid relay address: {}", .{err});
+        return debug.print("{s}", .{help_message});
     };
 
-    wol.relay_begin(listen_addr, relay_addr) catch |err| {
-        return std.debug.print("Failed to start relay: {}\n", .{err});
+    wol.relayBegin(io, listen, relay) catch |err| {
+        return log.err("Failed to start relay: {}", .{err});
     };
 }
 
-fn subCommandVersion() !void {
-    const version = try std.SemanticVersion.parse(build_zig_zon.version);
-    std.debug.print("{f}\n", .{version});
+fn subCommandVersion(io: Io) !void {
+    const version = comptime try std.SemanticVersion.parse(build_zig_zon.version);
+    const version_string = std.fmt.comptimePrint("{f}\n", .{version});
+    try Io.File.stdout().writeStreamingAll(io, version_string);
 }
 
-fn subCommandHelp() !void {
+fn subCommandHelp(io: Io) !void {
     const message =
         \\Usage: zig-wol <command> [options]
         \\Commands:
         \\  wake      Wake up a device by its MAC.
-        \\  status    Ping all aliases.
-        \\  alias     Create an alias for a MAC, optionally specify a broadcast, FQDN and more.
+        \\  ping      Ping all aliases.
+        \\  alias     Create an alias for a MAC, optionally specify a broadcast and a FQDN.
         \\  remove    Remove an alias by name.
         \\  list      List all aliases.
         \\  relay     Start listening for wol packets and relay them.
@@ -474,5 +481,5 @@ fn subCommandHelp() !void {
         \\Run 'zig-wol <command> --help' for more information on a specific command.
         \\
     ;
-    std.debug.print("{s}\n", .{message});
+    try Io.File.stdout().writeStreamingAll(io, message);
 }
