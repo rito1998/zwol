@@ -16,7 +16,7 @@ jobs:
       - name: Set up Zig compiler
         uses: mlugg/setup-zig@v2
         with:
-          version: '0.15.1'
+          version: '0.16.0-dev.3059+42e33db9d'
 
       - name: Build for all targets
         run: |
