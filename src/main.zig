@@ -106,7 +106,7 @@ fn subCommandWake(allocator: Allocator, io: Io, iter: *process.Args.Iterator, ma
     // if --all is provided, wake up all devices in the alias list
     if (res.args.all != 0) {
         var alias_list = alias.readAliasFile(allocator, io);
-        defer alias_list.deinit(allocator);
+        defer alias.deinitAliasList(allocator, &alias_list);
 
         for (alias_list.items) |item| {
             try wol.broadcastMagicPacket(io, item.mac, item.broadcast, null);
@@ -123,7 +123,7 @@ fn subCommandWake(allocator: Allocator, io: Io, iter: *process.Args.Iterator, ma
         return try wol.broadcastMagicPacket(io, mac, res.args.broadcast, null);
     } else {
         var alias_list = alias.readAliasFile(allocator, io);
-        defer alias_list.deinit(allocator);
+        defer alias.deinitAliasList(allocator, &alias_list);
 
         for (alias_list.items) |item| {
             if (item.name.len > 0 and item.name.len == mac.len) {
@@ -166,7 +166,7 @@ fn subCommandPing(allocator: Allocator, io: Io, iter: *process.Args.Iterator, ma
     const forever = res.args.forever != 0;
 
     var alias_list = alias.readAliasFile(allocator, io);
-    defer alias_list.deinit(allocator);
+    defer alias.deinitAliasList(allocator, &alias_list);
 
     var is_alive = try allocator.alloc(bool, alias_list.items.len);
     for (is_alive) |*item| {
@@ -284,7 +284,7 @@ fn subCommandAlias(allocator: Allocator, io: Io, iter: *process.Args.Iterator, m
 
     // get config from file, add alias and save config to file
     var alias_list = alias.readAliasFile(allocator, io);
-    defer alias_list.deinit(allocator);
+    defer alias.deinitAliasList(allocator, &alias_list);
 
     // check if alias already exists
     for (alias_list.items) |item| {
@@ -293,14 +293,12 @@ fn subCommandAlias(allocator: Allocator, io: Io, iter: *process.Args.Iterator, m
         }
     }
 
-    alias_list.append(allocator, alias.Alias{
+    try alias.appendAliasOwned(allocator, &alias_list, alias.Alias{
         .name = name,
         .mac = mac,
         .broadcast = broadcast,
         .fqdn = fqdn,
-    }) catch |err| {
-        return log.err("Failed to add alias: {}", .{err});
-    };
+    });
     alias.writeAliasFile(allocator, io, alias_list.items);
 
     log.info("Alias added.", .{});
@@ -331,9 +329,12 @@ fn subCommandRemove(allocator: Allocator, io: Io, iter: *process.Args.Iterator, 
     if (res.args.all != 0) {
         var alias_list = alias.readAliasFile(allocator, io);
         const alias_count = alias_list.items.len;
-        defer alias_list.deinit(allocator);
+        defer alias.deinitAliasList(allocator, &alias_list);
 
-        alias_list.clearAndFree(allocator);
+        for (alias_list.items) |item| {
+            alias.freeAlias(allocator, item);
+        }
+        alias_list.clearRetainingCapacity();
         alias.writeAliasFile(allocator, io, alias_list.items);
         log.info("Removed {d} aliases.", .{alias_count});
         return;
@@ -354,11 +355,12 @@ fn subCommandRemove(allocator: Allocator, io: Io, iter: *process.Args.Iterator, 
 
     // finally, if a name is provided, remove the alias
     var alias_list = alias.readAliasFile(allocator, io);
-    defer alias_list.deinit(allocator);
+    defer alias.deinitAliasList(allocator, &alias_list);
 
     for (alias_list.items, 0..) |item, idx| {
         if (std.mem.eql(u8, item.name, name)) {
-            _ = alias_list.orderedRemove(idx);
+            const removed = alias_list.orderedRemove(idx);
+            alias.freeAlias(allocator, removed);
             alias.writeAliasFile(allocator, io, alias_list.items);
             return log.info("Alias removed.", .{});
         }
@@ -384,7 +386,7 @@ fn subCommandList(allocator: Allocator, io: Io, iter: *process.Args.Iterator, ma
     defer res.deinit();
 
     var alias_list = alias.readAliasFile(allocator, io);
-    defer alias_list.deinit(allocator);
+    defer alias.deinitAliasList(allocator, &alias_list);
 
     var buf: [64]u8 = undefined;
     var stdout = Io.File.stdout().writer(io, &buf);

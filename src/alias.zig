@@ -14,6 +14,51 @@ pub const Alias = struct {
     fqdn: []const u8,
 };
 
+/// Free all owned strings in an alias.
+pub fn freeAlias(allocator: Allocator, value: Alias) void {
+    allocator.free(value.name);
+    allocator.free(value.mac);
+    allocator.free(value.broadcast);
+    allocator.free(value.fqdn);
+}
+
+/// Clone alias fields so they become allocator-owned.
+pub fn cloneAlias(allocator: Allocator, value: Alias) !Alias {
+    const name = try allocator.dupe(u8, value.name);
+    errdefer allocator.free(name);
+
+    const mac = try allocator.dupe(u8, value.mac);
+    errdefer allocator.free(mac);
+
+    const broadcast = try allocator.dupe(u8, value.broadcast);
+    errdefer allocator.free(broadcast);
+
+    const fqdn = try allocator.dupe(u8, value.fqdn);
+    errdefer allocator.free(fqdn);
+
+    return .{
+        .name = name,
+        .mac = mac,
+        .broadcast = broadcast,
+        .fqdn = fqdn,
+    };
+}
+
+/// Append an alias after cloning all string fields.
+pub fn appendAliasOwned(allocator: Allocator, alias_list: *ArrayList(Alias), value: Alias) !void {
+    const cloned = try cloneAlias(allocator, value);
+    errdefer freeAlias(allocator, cloned);
+    try alias_list.append(allocator, cloned);
+}
+
+/// Deinitialize alias list and deeply free every alias field.
+pub fn deinitAliasList(allocator: Allocator, alias_list: *ArrayList(Alias)) void {
+    for (alias_list.items) |item| {
+        freeAlias(allocator, item);
+    }
+    alias_list.deinit(allocator);
+}
+
 /// Return the example alias list. Caller must free the memory after use.
 fn getExampleAliasList(allocator: Allocator) ArrayList(Alias) {
     var alias_list = ArrayList(Alias).initCapacity(allocator, 0) catch |err| {
@@ -21,7 +66,9 @@ fn getExampleAliasList(allocator: Allocator) ArrayList(Alias) {
         process.exit(1);
     };
 
-    alias_list.append(allocator, Alias{
+    errdefer deinitAliasList(allocator, &alias_list);
+
+    appendAliasOwned(allocator, &alias_list, Alias{
         .name = "home-server",
         .mac = "11-11-11-ab-ab-ab",
         .broadcast = "255.255.255.255:9",
@@ -31,7 +78,7 @@ fn getExampleAliasList(allocator: Allocator) ArrayList(Alias) {
         process.exit(1);
     };
 
-    alias_list.append(allocator, Alias{
+    appendAliasOwned(allocator, &alias_list, Alias{
         .name = "workstation",
         .mac = "22-22-22-cd-cd-cd",
         .broadcast = "192.168.0.255:9",
@@ -73,7 +120,13 @@ pub fn readAliasFile(allocator: Allocator, io: Io) ArrayList(Alias) {
     };
     debug.assert(slice_nt.len == file_stats.size);
 
-    const alias_list_slice = std.zon.parse.fromSliceAlloc([]Alias, allocator, buffer_nt, null, .{}) catch |err| {
+    const alias_list_slice = std.zon.parse.fromSliceAlloc(
+        []Alias,
+        allocator,
+        buffer_nt,
+        null,
+        .{ .ignore_unknown_fields = true },
+    ) catch |err| {
         log.err("Error parsing alias file: {}", .{err});
         process.exit(1);
     };
@@ -86,7 +139,7 @@ test readAliasFile {
     const io = testing.io;
 
     var alias_list = readAliasFile(allocator, io);
-    defer alias_list.deinit(allocator);
+    defer deinitAliasList(allocator, &alias_list);
 
     try testing.expect(std.mem.eql(u8, alias_list.items[0].name, "home-server"));
     try testing.expect(std.mem.eql(u8, alias_list.items[0].mac, "11-11-11-ab-ab-ab"));
@@ -123,7 +176,7 @@ test writeAliasFile {
     const io = testing.io;
 
     var alias_list = getExampleAliasList(allocator);
-    defer alias_list.deinit(allocator);
+    defer deinitAliasList(allocator, &alias_list);
     writeAliasFile(allocator, io, alias_list.items);
 }
 
