@@ -77,7 +77,7 @@ test systemPingFqdn {
 
 pub fn hostnameLookup(io: Io, fqdn: []const u8, result: *?IpAddress) Io.Cancelable!void {
     const hostname = Io.net.HostName.init(fqdn) catch |err| {
-        log.err("hostnameLookup: {s} -> {}", .{ fqdn, err });
+        log.debug("hostnameLookup: {s} -> {}", .{ fqdn, err });
         result.* = null;
         return Io.Cancelable.Canceled;
     };
@@ -91,13 +91,13 @@ pub fn hostnameLookup(io: Io, fqdn: []const u8, result: *?IpAddress) Io.Cancelab
         &queue,
         .{ .port = 0 },
     ) catch |err| {
-        log.err("hostnameLookup: {s} -> {}", .{ fqdn, err });
+        log.debug("hostnameLookup: {s} -> {}", .{ fqdn, err });
         result.* = null;
         return Io.Cancelable.Canceled;
     };
 
     const lookup_result = queue.getOne(io) catch |err| {
-        log.err("hostnameLookup: {s} -> {}", .{ fqdn, err });
+        log.debug("hostnameLookup: {s} -> {}", .{ fqdn, err });
         result.* = null;
         return Io.Cancelable.Canceled;
     };
