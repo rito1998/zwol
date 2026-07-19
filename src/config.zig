@@ -6,55 +6,19 @@ const log = std.log;
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
 const ArrayList = std.ArrayList;
-
-pub const Alias = struct {
-    name: []const u8,
-    mac: []const u8,
-    broadcast: []const u8,
-    fqdn: []const u8,
-};
-
-/// Free all owned strings in an alias.
-pub fn freeAlias(allocator: Allocator, value: Alias) void {
-    allocator.free(value.name);
-    allocator.free(value.mac);
-    allocator.free(value.broadcast);
-    allocator.free(value.fqdn);
-}
-
-/// Clone alias fields so they become allocator-owned.
-pub fn cloneAlias(allocator: Allocator, value: Alias) !Alias {
-    const name = try allocator.dupe(u8, value.name);
-    errdefer allocator.free(name);
-
-    const mac = try allocator.dupe(u8, value.mac);
-    errdefer allocator.free(mac);
-
-    const broadcast = try allocator.dupe(u8, value.broadcast);
-    errdefer allocator.free(broadcast);
-
-    const fqdn = try allocator.dupe(u8, value.fqdn);
-    errdefer allocator.free(fqdn);
-
-    return .{
-        .name = name,
-        .mac = mac,
-        .broadcast = broadcast,
-        .fqdn = fqdn,
-    };
-}
+const Alias = @import("Alias.zig");
 
 /// Append an alias after cloning all string fields.
 pub fn appendAliasOwned(allocator: Allocator, alias_list: *ArrayList(Alias), value: Alias) !void {
-    const cloned = try cloneAlias(allocator, value);
-    errdefer freeAlias(allocator, cloned);
+    const cloned = try value.clone(allocator);
+    errdefer cloned.free(allocator);
     try alias_list.append(allocator, cloned);
 }
 
 /// Deinitialize alias list and deeply free every alias field.
 pub fn deinitAliasList(allocator: Allocator, alias_list: *ArrayList(Alias)) void {
     for (alias_list.items) |item| {
-        freeAlias(allocator, item);
+        item.free(allocator);
     }
     alias_list.deinit(allocator);
 }
