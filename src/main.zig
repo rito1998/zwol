@@ -34,17 +34,20 @@ const main_params = clap.parseParamsComptime(
 const MainArgs = clap.ResultEx(clap.Help, &main_params, main_parsers);
 
 pub fn main(init: process.Init) !void {
-    const arena = init.arena.allocator();
+    const allocator = switch (builtin.mode) {
+        .Debug => init.gpa,
+        else => init.arena.allocator(),
+    };
     const io = init.io;
 
-    var iter = try init.minimal.args.iterateAllocator(arena);
+    var iter = try init.minimal.args.iterateAllocator(allocator);
     defer iter.deinit();
     _ = iter.next(); // skip program name
 
     var diag = clap.Diagnostic{};
     var res = clap.parseEx(clap.Help, &main_params, main_parsers, &iter, .{
         .diagnostic = &diag,
-        .allocator = arena,
+        .allocator = allocator,
         .terminating_positional = 0,
     }) catch |err| {
         try diag.reportToFile(io, .stderr(), err);
@@ -67,12 +70,12 @@ pub fn main(init: process.Init) !void {
 
     const subcommand = res.positionals[0] orelse return subCommandHelp(io);
     switch (subcommand) {
-        .wake => try subCommandWake(arena, io, &iter, res),
-        .ping => try subCommandPing(arena, io, &iter, res),
-        .alias => try subCommandAlias(arena, io, &iter, res),
-        .remove => try subCommandRemove(arena, io, &iter, res),
-        .list => try subCommandList(arena, io, &iter, res),
-        .relay => try subCommandRelay(arena, io, &iter, res),
+        .wake => try subCommandWake(allocator, io, &iter, res),
+        .ping => try subCommandPing(allocator, io, &iter, res),
+        .alias => try subCommandAlias(allocator, io, &iter, res),
+        .remove => try subCommandRemove(allocator, io, &iter, res),
+        .list => try subCommandList(allocator, io, &iter, res),
+        .relay => try subCommandRelay(allocator, io, &iter, res),
         .version => try subCommandVersion(io),
         .help => try subCommandHelp(io),
     }
